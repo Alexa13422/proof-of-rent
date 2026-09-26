@@ -79,9 +79,22 @@
 
 ## MVP (40 годин)
 
-### 0. Spike: Privy + fee payer (≤1 год, першим)
-- ⏳ Google-вхід через Privy → орендар підписує транзакцію → API-роут додає підпис fee payer і шле на devnet
-- Не злетіло за годину → Phantom Connect, SOL з крана, fee payer у roadmap
+### 0. Privy + fee payer
+- ✅ Google-вхід через Privy, embedded Solana-гаманець; wallet-standard/Phantom прибрано
+- ✅ Сервер підписує від імені користувача через Privy signers (authorization key) і додає підпис fee payer — у користувача 0 SOL
+- ⏳ Налаштувати в дашборді Privy: *Wallet infrastructure → Authorization keys → Create new key* →
+  `NEXT_PUBLIC_PRIVY_SIGNER_ID` + `PRIVY_AUTHORIZATION_KEY` у `.env`; прибрати зовнішні Solana-гаманці з логіну
+
+### 0.5 Реалізовано (гілка `feat/lease-offers`, devnet `AqMU…suba`)
+Змінено порядок з рішення №4: **оферту створює орендодавець**, орендар переглядає і приймає або відхиляє.
+Правки умов = відхилити + орендодавець надсилає нову оферту (найпростіше).
+- ✅ `create_passport` — один паспорт на користувача (PDA за гаманцем); при створенні — демо-баланс tUSDC
+- ✅ `create_offer` (орендодавець, лише орендарю з паспортом) / `reject_offer` (орендар) / `cancel_offer` (орендодавець)
+- ✅ `accept_offer` — орендар до дедлайну: кауція → vault + комісія платформи (`Config.fee_bps`, 1%, стеля 10%) → `Active`
+- ✅ Закриття: `release_full`, `propose_settlement`/`accept_settlement`, `claim_after_timeout` (після `end_ts + return_timeout`); результат пишеться в паспорти обох сторін
+- ✅ 20 LiteSVM-тестів; e2e на devnet — `npx tsx scripts/e2e-devnet.ts`
+- ✅ UI: `/dashboard` (вхід → дозвіл підпису → паспорт → оферти), `/offers/new`, `/offers/[id]`, `/passport/[address]` з on-chain даних
+- ⏳ Далі: спір/арбітр, щомісячні `RentRecord`, хеші фото протоколу, дедлайн оферти як параметр форми
 
 ### 1. Програма (Anchor) — замінює шаблонну `anchor/programs/vault`
 Детальний план (акаунти, інструкції, тести, кроки S0–S7, відкриті рішення): [PLAN-program.md](PLAN-program.md).

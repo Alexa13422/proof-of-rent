@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { Logo } from "./components/brand/logo";
-import { ClusterSelect } from "./components/cluster-select";
 import { Guilloche } from "./components/guilloche";
 import { PassportCard } from "./components/passport-card";
 import { ThemeToggle } from "./components/theme-toggle";
-import { WalletButton } from "./components/wallet-button";
+import { AccountButton } from "./components/account-button";
 import { getMockPassport } from "./lib/mock/passport";
 
 const steps = [
@@ -43,11 +42,8 @@ export default function Home() {
           <Logo size={32} />
         </Link>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:block">
-            <ClusterSelect />
-          </div>
           <ThemeToggle />
-          <WalletButton />
+          <AccountButton />
         </div>
       </header>
 
@@ -70,15 +66,19 @@ export default function Home() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
-                  href="/passport/demo"
+                  href="/dashboard"
                   className="inline-flex min-h-12 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  Create your passport
+                </Link>
+                <Link
+                  href="/passport/demo"
+                  className="inline-flex min-h-12 items-center justify-center rounded-md border border-input bg-card px-5 text-sm font-medium transition-colors hover:border-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   View sample passport
                 </Link>
-                <span className="inline-flex min-h-12 items-center justify-center rounded-md border border-border bg-card px-5 text-sm text-muted">
-                  Create passport · coming soon
-                </span>
               </div>
+
               <p className="mt-5 text-xs leading-5 text-muted">
                 Hackathon prototype · No personal data is published
               </p>

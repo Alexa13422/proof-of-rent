@@ -14,8 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Усі продуктові рішення (зафіксовані в grilling-сесії 2026-09-26), бізнес-модель, конкуренти і демо-сценарій —
 у [ROADMAP.md](ROADMAP.md). Перед нетривіальною роботою читай відповідний розділ там.
 
-**Стан:** скафолд із шаблону `solana-foundation/templates/kit/nextjs-anchor` (початковий коміт). Програма ще
-шаблонна — `anchor/programs/vault` (SOL-vault), її замінюємо на програму Proof of Rent.
+**Стан:** програма `anchor/programs/proof_of_rent` задеплоєна на devnet (`AqMUqWYHuFNdY5s78wX52BF3fKkaQVTPT4UsAvcgsuba`):
+паспорти, оферти оренди (створює орендодавець), кауція в ескроу з комісією платформи. Токен кауції — тестовий
+`tUSDC` (mint у `NEXT_PUBLIC_DEPOSIT_MINT`, authority = fee payer). Разова ініціалізація — `scripts/setup-devnet.ts`,
+e2e — `scripts/e2e-devnet.ts`. Усі транзакції шле `app/api/tx/[action]/route.ts`: Privy-signer користувача + fee payer.
+Деплой-ключі у WSL: `~/keys/fee-payer.json`, `~/keys/proof_of_rent-keypair.json`.
 
 ## Команди
 
