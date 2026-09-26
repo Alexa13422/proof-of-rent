@@ -1,0 +1,63 @@
+# Verification log
+
+## 2026-09-26 — Privy embedded-wallet / server fee-payer spike
+
+### Acceptance criteria
+
+- Google-only Privy login creates an embedded Solana wallet.
+- The API verifies the caller's Privy access token server-side and derives the wallet ID from that verified user's linked embedded Solana wallet.
+- Authentication and fee-payer secret access are protected by enforceable `server-only` module boundaries.
+- `FEE_PAYER_SECRET_KEY` accepts only a JSON array of exactly 64 integer bytes in the range 0–255.
+- The transaction path is hardcoded to Solana devnet and contains only a fixed, no-PII Memo instruction.
+- Both the tenant signer and server fee-payer signer are required.
+- The fully signed transaction is simulated with `sigVerify: true` before broadcast.
+- Browser and API responses do not expose raw Privy, RPC, server configuration, email, user ID, or caught-exception details.
+- No transaction or airdrop is performed during verification.
+
+### Objective evidence
+
+- Focused ESLint: PASS
+  - Command: `npx eslint "app/spike/privy/**/*.{ts,tsx}" "app/api/spike/privy/**/*.ts"`
+  - Result: exit code 0, no findings.
+- Fee-payer parser self-check: PASS
+  - Command: `node app/spike/privy/fee-payer.test.ts`
+  - Result: `fee-payer.test.ts: all assertions passed`.
+  - Note: Node emitted the known `MODULE_TYPELESS_PACKAGE_JSON` performance warning; no project-wide module-mode change was made for this one self-check.
+- Next.js production build: PASS
+  - Command: `npm run build`
+  - Result: compilation and TypeScript checks succeeded; routes include `/spike/privy` and `/api/spike/privy/send`.
+
+### Independent read-only critic
+
+Codex reviewed the implementation in a read-only sandbox. Earlier rounds identified and prompted fixes for:
+
+1. Raw server/Privy/RPC errors returned to callers.
+2. Browser rendering of caught provider errors.
+3. Browser display of Google email / Privy user ID.
+4. Browser-visible provider and environment-variable configuration details.
+5. Missing enforceable server-only boundaries around authentication and fee-payer secret use.
+
+Fixes applied:
+
+- Detailed failures remain in server logs; API and browser messages are generic.
+- Email and Privy user ID are no longer rendered.
+- User-facing configuration/provider wording is generic.
+- `import "server-only"` protects `privy-user.ts` and `fee-payer.ts`.
+- The pure fee-payer parser was extracted to `parse-fee-payer-secret.ts` so its Node self-check does not import a server-only module.
+
+Final Codex verdict after these fixes:
+
+`PASS — All requested safeguards are present.`
+
+### Access-token compatibility fix
+
+After interactive login showed that no optional identity token was issued, the spike was changed to use Privy's standard access token flow:
+
+- Browser: `getAccessToken()`.
+- Server: `verifyAuthToken()` followed by `getUserById()` using the verified `userId` claim.
+- The existing Bearer transport, embedded-wallet lookup, and Solana transaction path remain unchanged.
+- Focused ESLint and the Next.js production build passed after the change.
+
+### Safety result
+
+No airdrop, API send-route invocation, wallet signature request, or devnet transaction was performed. A live send still requires explicit user approval after showing the exact transaction summary and confirming devnet.
