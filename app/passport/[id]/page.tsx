@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { address } from "@solana/kit";
 import { LeaseHistory } from "@/app/components/lease-history";
+import { PassportActivity } from "@/app/components/passport-activity";
 import { PassportCard } from "@/app/components/passport-card";
 import { PaymentTimeline } from "@/app/components/payment-timeline";
 import { SharePassportButton } from "@/app/components/share-passport-button";
@@ -82,6 +84,12 @@ export default async function PassportPage({ params }: PassportPageProps) {
               payments={latest.payments}
               leaseArea={latest.area}
             />
+          </div>
+        )}
+
+        {id !== "demo" && (
+          <div className="mt-12">
+            <PassportActivity owner={address(id)} />
           </div>
         )}
 
