@@ -1,56 +1,59 @@
 @import "tailwindcss";
+@import "./components/brand/holo-seal.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --primary: #171717;
-  --primary-foreground: #fafafa;
-  --muted: #737373;
-  --muted-foreground: #737373;
+  /* Proof of Rent design system: cool white paper, black ink, signal orange */
+  --background: #f6f6f3;
+  --foreground: #111111;
+  --primary: #ff4a1c;
+  --primary-foreground: #111111;
+  --primary-ink: #c2330c;
+  --muted: #5c5c57;
+  --muted-foreground: #5c5c57;
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #111111;
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --border: #e5e5e5;
-  --border-low: #f5f5f5;
-  --input: #e5e5e5;
-  --accent: #f5f5f5;
-  --accent-foreground: #171717;
-  --cream: #f5f5f5;
-  --destructive: #ef4444;
-  --destructive-foreground: #ef4444;
-  --ring: #a3a3a3;
-  --radius: 0.625rem;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #171717;
-  --font-sans: var(--font-inter), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --popover-foreground: #111111;
+  --border: #e2e2dc;
+  --border-low: #ecece7;
+  --input: #8a8a84;
+  --accent: #ecece7;
+  --accent-foreground: #111111;
+  --cream: #ecece7;
+  --caution: #855700;
+  --destructive: #b0103c;
+  --destructive-foreground: #b0103c;
+  --ring: #c2330c;
+  --secondary: #ecece7;
+  --secondary-foreground: #111111;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #171717;
-  --muted: #a3a3a3;
-  --muted-foreground: #737373;
-  --card: #171717;
-  --card-foreground: #fafafa;
-  --popover: #171717;
-  --popover-foreground: #fafafa;
-  --border: #262626;
-  --border-low: rgba(38, 38, 38, 0.5);
-  --input: #262626;
-  --accent: #262626;
-  --accent-foreground: #fafafa;
-  --cream: #262626;
-  --destructive: #ef4444;
-  --destructive-foreground: #ef4444;
-  --ring: #525252;
-  --secondary: #262626;
-  --secondary-foreground: #fafafa;
+  --background: #0f0f0e;
+  --foreground: #f3f3ef;
+  --primary: #ff5a2e;
+  --primary-foreground: #111111;
+  --primary-ink: #ff7a55;
+  --muted: #a6a69f;
+  --muted-foreground: #a6a69f;
+  --card: #1a1a18;
+  --card-foreground: #f3f3ef;
+  --popover: #1a1a18;
+  --popover-foreground: #f3f3ef;
+  --border: #2c2c29;
+  --border-low: #242421;
+  --input: #75756f;
+  --accent: #242421;
+  --accent-foreground: #f3f3ef;
+  --cream: #242421;
+  --caution: #f0b44c;
+  --destructive: #ff6b8b;
+  --destructive-foreground: #ff6b8b;
+  --ring: #ff7a55;
+  --secondary: #242421;
+  --secondary-foreground: #f3f3ef;
 }
 
 @theme inline {
@@ -58,6 +61,7 @@
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-ink: var(--primary-ink);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-card: var(--card);
@@ -70,16 +74,18 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-cream: var(--cream);
+  --color-caution: var(--caution);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
 }
 
 @layer base {
@@ -88,7 +94,32 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: var(--font-sans);
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  h1,
+  h2 {
+    @apply font-serif;
+  }
+
+  button,
+  a {
+    touch-action: manipulation;
+  }
+
+  ::selection {
+    background: var(--foreground);
+    color: var(--background);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

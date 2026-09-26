@@ -3,7 +3,7 @@
 import {
   createContext,
   useContext,
-  useState,
+  useSyncExternalStore,
   useCallback,
   type ReactNode,
 } from "react";
@@ -20,24 +20,36 @@ type ClusterContextValue = {
 const ClusterContext = createContext<ClusterContextValue | null>(null);
 
 const STORAGE_KEY = "solana-cluster";
-function getInitialCluster(): ClusterMoniker {
-  if (typeof window === "undefined") return "devnet";
+const CLUSTER_EVENT = "solana-cluster-change";
+
+function subscribe(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(CLUSTER_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(CLUSTER_EVENT, onStoreChange);
+  };
+}
+
+function getStoredCluster(): ClusterMoniker {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored && CLUSTERS.includes(stored as ClusterMoniker)) {
-    return stored as ClusterMoniker;
-  }
-  return "devnet";
+  return stored && CLUSTERS.includes(stored as ClusterMoniker)
+    ? (stored as ClusterMoniker)
+    : "devnet";
 }
 
 export { CLUSTERS };
 
 export function ClusterProvider({ children }: { children: ReactNode }) {
-  const [cluster, setClusterState] =
-    useState<ClusterMoniker>(getInitialCluster);
+  const cluster = useSyncExternalStore<ClusterMoniker>(
+    subscribe,
+    getStoredCluster,
+    () => "devnet"
+  );
 
   const setCluster = useCallback((c: ClusterMoniker) => {
-    setClusterState(c);
     localStorage.setItem(STORAGE_KEY, c);
+    window.dispatchEvent(new Event(CLUSTER_EVENT));
   }, []);
 
   const explorerUrl = useCallback(

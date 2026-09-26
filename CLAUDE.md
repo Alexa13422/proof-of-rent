@@ -105,3 +105,25 @@ wsl -d Ubuntu -- bash -lc "cd /mnt/c/Programming/SOL/proof-of-rent && NO_DNA=1 n
 ## Мова
 
 Документація та спілкування — українською. Код, ідентифікатори, коміти — англійською.
+
+## Дизайн
+
+Дизайн-система: https://claude.ai/artifact/VrvNo24iSfEaY6tozJ8on2 (токени, правила, компоненти). Коротко:
+- Холодний білий (`background` #F6F6F3, `card` білий), чорнило (`foreground`), єдиний бренд-колір — `primary`,
+  сигнальний помаранчевий #FF4A1C: заливки, рамки, лого, штамп «Verified record» (текст на ньому — `primary-foreground`,
+  чорний). Дрібний акцентний текст — лише `text-primary-ink` (#C2330C), бо чистий помаранчевий на білому має 3:1.
+  `caution` і `destructive` — лише для результатів/спорів і завжди зі словом поруч. Жодних сирих кольорів
+  Tailwind (`emerald-*`, `blue-*`…) — тільки токени з `app/globals.css`.
+- Фон не суцільний: паспортний гільйош-візерунок `<Guilloche>` (`app/components/guilloche.tsx`) тонкими лініями
+  `text-primary` з `opacity-25`–`35` — у hero лендінгу і в шапці картки паспорта. Не більше одного на екран-блок,
+  ніколи під дрібним текстом без суцільної підкладки.
+- Паспорт = результат кауції насамперед (`LeaseHistory`, штампи «Returned in full / Partly returned / Arbiter ruled»),
+  оплати — другорядно (`PaymentTimeline`: «Landlord confirmed» / «No objection»). Суми польським форматом: «3 200 PLN».
+- Шрифти: `h1`/`h2` — Newsreader (serif, weight 500), інтерфейс — IBM Plex Sans, суми/дати/адреси — IBM Plex Mono
+  з `tabular-nums`.
+- Межі замість тіней; радіуси лише `rounded-sm` (2px, штампи/бейджі), `rounded-md` (4px, контроли),
+  `rounded-lg` (8px, картки). Без `rounded-full` пілюль, градієнтів, blur, підстрибування на hover.
+- Uppercase-підписи з `tracking-[0.06em]`, не ширше. Фокус — `outline-2 outline-offset-2 outline-ring`.
+  Зони дотику ≥44px (`min-h-11`).
+
+@AGENTS.md
