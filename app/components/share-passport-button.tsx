@@ -20,7 +20,7 @@ export function SharePassportButton() {
     <button
       type="button"
       onClick={copyLink}
-      className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-medium transition-colors hover:bg-cream focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-card px-4 text-sm font-medium transition-colors hover:border-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       aria-live="polite"
     >
       {status === "copied" ? <CheckIcon /> : <ShareIcon />}

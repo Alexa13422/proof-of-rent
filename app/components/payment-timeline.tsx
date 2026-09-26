@@ -1,13 +1,12 @@
 import type {
+  PaymentConfirmation,
   PaymentTiming,
-  PaymentVerification,
   RentPayment,
 } from "@/app/lib/mock/passport";
 
-const verificationLabels: Record<PaymentVerification, string> = {
-  usdc: "USDC payment",
-  landlord: "Landlord confirmed",
-  email: "Bank email verified",
+const confirmationLabels: Record<PaymentConfirmation, string> = {
+  "landlord-confirmed": "Landlord confirmed",
+  "no-objection": "No objection",
 };
 
 const timingLabels: Record<PaymentTiming, string> = {
@@ -15,27 +14,28 @@ const timingLabels: Record<PaymentTiming, string> = {
   late: "Paid late",
 };
 
-export function PaymentTimeline({ payments }: { payments: RentPayment[] }) {
+export function PaymentTimeline({
+  payments,
+  leaseArea,
+}: {
+  payments: RentPayment[];
+  leaseArea: string;
+}) {
   return (
     <section aria-labelledby="payment-history-title">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Record log
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+            Rent log · {leaseArea}
           </p>
-          <h2
-            id="payment-history-title"
-            className="mt-2 text-2xl font-semibold tracking-tight"
-          >
-            Payment history
+          <h2 id="payment-history-title" className="mt-2 text-2xl font-medium">
+            Rent payments
           </h2>
         </div>
-        <p className="font-mono text-xs text-muted">
-          {payments.length} records
-        </p>
+        <p className="font-mono text-xs text-muted">{payments.length} months</p>
       </div>
 
-      <ol className="overflow-hidden rounded-2xl border border-border bg-card">
+      <ol className="overflow-hidden rounded-lg border border-border bg-card">
         {payments.map((payment) => (
           <li
             key={payment.month}
@@ -45,8 +45,8 @@ export function PaymentTimeline({ payments }: { payments: RentPayment[] }) {
               <span
                 className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border ${
                   payment.timing === "on-time"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-                    : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                    ? "border-primary/40 bg-primary/10 text-primary-ink"
+                    : "border-caution/40 bg-caution/10 text-caution"
                 }`}
               >
                 {payment.timing === "on-time" ? <CheckIcon /> : <ClockIcon />}
@@ -55,7 +55,7 @@ export function PaymentTimeline({ payments }: { payments: RentPayment[] }) {
                 <p className="font-medium">{payment.month}</p>
                 <p className="mt-1 text-sm text-muted">
                   {timingLabels[payment.timing]} ·{" "}
-                  {verificationLabels[payment.verification]}
+                  {confirmationLabels[payment.confirmation]}
                 </p>
               </div>
             </div>

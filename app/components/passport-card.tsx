@@ -1,4 +1,5 @@
-import type { RentPassport } from "@/app/lib/mock/passport";
+import { Guilloche } from "@/app/components/guilloche";
+import { passportFacts, type RentPassport } from "@/app/lib/mock/passport";
 
 type PassportCardProps = {
   passport: RentPassport;
@@ -6,27 +7,30 @@ type PassportCardProps = {
 };
 
 export function PassportCard({ passport, compact = false }: PassportCardProps) {
+  const { completedLeases, returnedInFull, documentedMonths } =
+    passportFacts(passport);
   const facts = [
-    ["Documented months", passport.documentedMonths],
-    ["Paid on time", `${passport.onTimePercentage}%`],
-    ["Completed leases", passport.completedLeases],
+    ["Completed leases", completedLeases],
+    ["Deposit back in full", `${returnedInFull} of ${completedLeases}`],
+    ["Months on record", documentedMonths],
   ] as const;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-[0_18px_50px_-40px_rgba(0,0,0,0.35)]">
-      <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-5 sm:px-7">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+    <article className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
+      <div className="relative flex items-start justify-between gap-4 overflow-hidden border-b border-border px-5 py-5 sm:px-7">
+        <Guilloche className="pointer-events-none absolute inset-0 size-full text-primary opacity-25" />
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             Tenant passport
           </p>
-          <h2 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">
+          <h2 className="mt-3 text-xl font-medium sm:text-2xl">
             {passport.tenantLabel}
           </h2>
           <p className="mt-1 font-mono text-sm text-muted">
             {passport.tenantReference}
           </p>
         </div>
-        <div className="-rotate-2 rounded-md border border-dashed border-emerald-700 px-2.5 py-2 text-center text-[10px] font-bold uppercase leading-tight tracking-[0.14em] text-emerald-700 dark:border-emerald-400 dark:text-emerald-400">
+        <div className="relative -rotate-3 rounded-sm bg-primary px-2.5 py-2 text-center text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-primary-foreground">
           Verified
           <br />
           record
@@ -49,15 +53,15 @@ export function PassportCard({ passport, compact = false }: PassportCardProps) {
       <div className="flex items-center gap-3 px-5 py-4 text-sm sm:px-7">
         <CheckIcon />
         <p>
-          Verified rental records since{" "}
+          Lease records since{" "}
           <span className="font-mono">{passport.verifiedSince}</span>
         </p>
       </div>
 
       {!compact && (
         <div className="border-t border-border bg-cream/50 px-5 py-4 text-sm leading-6 text-muted sm:px-7">
-          This passport reports documented rent records. It does not use a
-          hidden credit score or expose personal information on-chain.
+          This passport shows how finished leases ended and how rent was
+          confirmed. It is not a credit score and publishes no personal details.
         </div>
       )}
     </article>
@@ -66,13 +70,13 @@ export function PassportCard({ passport, compact = false }: PassportCardProps) {
 
 function CheckIcon() {
   return (
-    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2"
+        strokeWidth="2.5"
         className="size-3.5"
       >
         <path d="m5 12 4 4L19 6" />

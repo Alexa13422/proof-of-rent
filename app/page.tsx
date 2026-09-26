@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ClusterSelect } from "./components/cluster-select";
+import { Guilloche } from "./components/guilloche";
 import { PassportCard } from "./components/passport-card";
 import { ThemeToggle } from "./components/theme-toggle";
 import { WalletButton } from "./components/wallet-button";
@@ -8,18 +9,21 @@ import { getMockPassport } from "./lib/mock/passport";
 const steps = [
   {
     number: "01",
-    title: "Create a lease",
-    description: "Both sides agree on rent, deposit, and key dates.",
+    title: "Put the deposit in escrow",
+    description:
+      "The deposit waits in escrow, not in the landlord’s account, until you move out.",
   },
   {
     number: "02",
-    title: "Build the record",
-    description: "Each verified rent payment becomes a portable fact.",
+    title: "Hand over the flat",
+    description:
+      "Move-in and move-out photo protocols are fingerprinted, so neither side can swap them later.",
   },
   {
     number: "03",
-    title: "Share the passport",
-    description: "A future landlord can review the history from one link.",
+    title: "Keep the outcome",
+    description:
+      "Returned in full, partly, or by an arbiter’s ruling: the result joins your passport.",
   },
 ];
 
@@ -48,44 +52,48 @@ export default function Home() {
       </header>
 
       <main>
-        <section className="mx-auto grid max-w-6xl gap-12 px-4 pb-20 pt-12 sm:px-6 md:grid-cols-[0.9fr_1.1fr] md:items-center md:pb-28 md:pt-20">
-          <div className="max-w-xl">
-            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              Built for renters in Poland
+        <section className="relative overflow-hidden">
+          <Guilloche className="pointer-events-none absolute inset-x-0 top-1/2 h-[480px] w-full -translate-y-1/2 text-primary opacity-35" />
+          <div className="relative mx-auto grid max-w-6xl gap-12 px-4 pb-20 pt-12 sm:px-6 md:grid-cols-[0.9fr_1.1fr] md:items-center md:pb-28 md:pt-20">
+            <div className="max-w-xl">
+              <div className="mb-7 inline-flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted">
+                <span className="size-1.5 rounded-full bg-primary" />
+                Built for renters in Poland
+              </div>
+              <h1 className="text-balance text-5xl font-medium leading-[1.02] tracking-[-0.01em] sm:text-6xl lg:text-7xl">
+                Your rent history. Your proof.
+              </h1>
+              <p className="mt-6 max-w-lg text-pretty text-base leading-7 text-muted sm:text-lg sm:leading-8">
+                A portable record of how your leases ended: deposits returned,
+                rent paid on time. Show it to your next landlord without handing
+                over private documents.
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href="/passport/demo"
+                  className="inline-flex min-h-12 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  View sample passport
+                </Link>
+                <span className="inline-flex min-h-12 items-center justify-center rounded-md border border-border bg-card px-5 text-sm text-muted">
+                  Create passport · coming soon
+                </span>
+              </div>
+              <p className="mt-5 text-xs leading-5 text-muted">
+                Hackathon prototype · No personal data is published
+              </p>
             </div>
-            <h1 className="text-balance text-5xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-7xl">
-              Your rent history. Your proof.
-            </h1>
-            <p className="mt-6 max-w-lg text-pretty text-base leading-7 text-muted sm:text-lg sm:leading-8">
-              A portable record of verified rent payments that helps renters
-              prove reliability without exposing private documents.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/passport/demo"
-                className="inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transform-none"
-              >
-                View sample passport
-              </Link>
-              <span className="inline-flex min-h-12 items-center justify-center rounded-lg border border-border px-5 text-sm text-muted">
-                Create passport · coming soon
-              </span>
-            </div>
-            <p className="mt-5 text-xs leading-5 text-muted">
-              Devnet preview · No personal data stored on-chain
-            </p>
-          </div>
 
-          <div className="relative md:pl-6">
-            <div
-              aria-hidden="true"
-              className="absolute -left-3 -top-3 size-16 border-l border-t border-border md:left-3"
-            />
-            <PassportCard passport={passport} compact />
-            <p className="mt-3 text-right font-mono text-[11px] uppercase tracking-[0.15em] text-muted">
-              Sample public record · 01/01
-            </p>
+            <div className="relative md:pl-6">
+              <div
+                aria-hidden="true"
+                className="absolute -left-3 -top-3 size-16 border-l border-t border-border md:left-3"
+              />
+              <PassportCard passport={passport} compact />
+              <p className="mt-3 text-right font-mono text-[11px] uppercase tracking-[0.06em] text-muted">
+                Sample public record · 01/01
+              </p>
+            </div>
           </div>
         </section>
 
@@ -93,10 +101,10 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-24">
             <div className="grid gap-10 md:grid-cols-[0.75fr_1.25fr]">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
                   How it works
                 </p>
-                <h2 className="mt-3 max-w-sm text-3xl font-semibold tracking-tight sm:text-4xl">
+                <h2 className="mt-3 max-w-sm text-3xl font-medium sm:text-4xl">
                   A record that grows with every lease.
                 </h2>
               </div>
@@ -121,26 +129,26 @@ export default function Home() {
         </section>
 
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-24">
-          <div className="grid gap-8 rounded-2xl border border-border p-6 sm:p-8 md:grid-cols-[1fr_auto] md:items-end">
+          <div className="grid gap-8 rounded-lg border border-border p-6 sm:p-8 md:grid-cols-[1fr_auto] md:items-end">
             <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+              <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
                 Trust without oversharing
               </p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+              <h2 className="mt-3 text-2xl font-medium sm:text-3xl">
                 Verifiable facts, not an invented score.
               </h2>
               <p className="mt-4 leading-7 text-muted">
-                Proof of Rent shows what was documented, how it was verified,
-                and when it happened. Names, addresses, bank details, and photos
-                stay off-chain.
+                Proof of Rent shows how each lease ended, how rent was
+                confirmed, and when. Names, addresses, bank details and photos
+                are never published.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 md:max-w-xs md:justify-end">
-              {["USDC verified", "Landlord confirmed", "Email proof"].map(
+              {["Deposit outcome", "Landlord confirmed", "No objection"].map(
                 (label) => (
                   <span
                     key={label}
-                    className="rounded-full border border-border bg-cream px-3 py-1.5 text-xs font-medium"
+                    className="rounded-sm border border-border bg-cream px-3 py-1.5 text-xs font-medium"
                   >
                     {label}
                   </span>
@@ -154,7 +162,7 @@ export default function Home() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-7 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>Proof of Rent · Warsaw hackathon prototype</p>
-          <p>Solana devnet · Not a credit score</p>
+          <p>Not a credit score</p>
         </div>
       </footer>
     </div>
@@ -163,7 +171,7 @@ export default function Home() {
 
 function Mark() {
   return (
-    <span className="flex size-8 items-center justify-center rounded-lg border border-foreground bg-foreground text-primary-foreground">
+    <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
