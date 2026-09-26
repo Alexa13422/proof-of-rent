@@ -61,6 +61,13 @@ pub mod proof_of_rent {
         Ok(())
     }
 
+    /// Hands the admin role to another key. Both must sign, so a typo in the
+    /// new address cannot lock the config forever.
+    pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
+        ctx.accounts.config.admin = ctx.accounts.new_admin.key();
+        Ok(())
+    }
+
     /// Every user gets exactly one passport; `init` rejects a second one.
     pub fn create_passport(ctx: Context<CreatePassport>) -> Result<()> {
         let passport = &mut ctx.accounts.passport;
@@ -415,6 +422,14 @@ pub struct InitConfig<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     pub admin: Signer<'info>,
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = admin @ PorError::Unauthorized)]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+pub struct SetAdmin<'info> {
+    pub admin: Signer<'info>,
+    pub new_admin: Signer<'info>,
     #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = admin @ PorError::Unauthorized)]
     pub config: Account<'info, Config>,
 }

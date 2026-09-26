@@ -27,6 +27,7 @@ import {
   parseProposeSettlementInstruction,
   parseRejectOfferInstruction,
   parseReleaseFullInstruction,
+  parseSetAdminInstruction,
   parseUpdateConfigInstruction,
   type ParsedAcceptOfferInstruction,
   type ParsedAcceptSettlementInstruction,
@@ -38,6 +39,7 @@ import {
   type ParsedProposeSettlementInstruction,
   type ParsedRejectOfferInstruction,
   type ParsedReleaseFullInstruction,
+  type ParsedSetAdminInstruction,
   type ParsedUpdateConfigInstruction,
 } from "../instructions";
 
@@ -103,6 +105,7 @@ export enum ProofOfRentInstruction {
   ProposeSettlement,
   RejectOffer,
   ReleaseFull,
+  SetAdmin,
   UpdateConfig,
 }
 
@@ -224,6 +227,17 @@ export function identifyProofOfRentInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([251, 163, 0, 52, 91, 194, 187, 92]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.SetAdmin;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([29, 158, 252, 191, 10, 83, 219, 99]),
       ),
       0,
@@ -269,6 +283,9 @@ export type ParsedProofOfRentInstruction<
   | ({
       instructionType: ProofOfRentInstruction.ReleaseFull;
     } & ParsedReleaseFullInstruction<TProgram>)
+  | ({
+      instructionType: ProofOfRentInstruction.SetAdmin;
+    } & ParsedSetAdminInstruction<TProgram>)
   | ({
       instructionType: ProofOfRentInstruction.UpdateConfig;
     } & ParsedUpdateConfigInstruction<TProgram>);
@@ -346,6 +363,13 @@ export function parseProofOfRentInstruction<TProgram extends string>(
       return {
         instructionType: ProofOfRentInstruction.ReleaseFull,
         ...parseReleaseFullInstruction(instruction),
+      };
+    }
+    case ProofOfRentInstruction.SetAdmin: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.SetAdmin,
+        ...parseSetAdminInstruction(instruction),
       };
     }
     case ProofOfRentInstruction.UpdateConfig: {

@@ -112,22 +112,34 @@ async function buildInstructions(
   body: Body,
   user: TransactionSigner,
   feePayer: TransactionSigner
-): Promise<{ instructions: Instruction[]; result?: Record<string, string> }> {
+): Promise<{
+  instructions: Instruction[];
+  /** Fee-payer-only follow-up transaction (no user signature). */
+  after?: Instruction[];
+  result?: Record<string, string>;
+}> {
   const me = user.address;
 
   switch (action) {
     case "create_passport": {
+      // The user signs only our program + the ATA program. The demo top-up
+      // (Token Program MintTo) is a separate, fee-payer-only transaction, so
+      // the Privy policy on the user's wallet never has to allow token ops.
       const instructions: Instruction[] = [
         await getCreatePassportInstructionAsync({ owner: user, payer: feePayer }),
         await ensureAta(feePayer, me),
-        getMintToInstruction({
-          mint: DEPOSIT_MINT!,
-          token: await ata(me),
-          mintAuthority: feePayer,
-          amount: STARTER_BALANCE,
-        }),
       ];
-      return { instructions };
+      return {
+        instructions,
+        after: [
+          getMintToInstruction({
+            mint: DEPOSIT_MINT!,
+            token: await ata(me),
+            mintAuthority: feePayer,
+            amount: STARTER_BALANCE,
+          }),
+        ],
+      };
     }
 
     case "create_offer": {
@@ -256,13 +268,21 @@ export async function POST(
     ]);
     if (user.address !== wallet.address) throw new Error("Signer mismatch");
 
-    const { instructions, result } = await buildInstructions(
+    const { instructions, after, result } = await buildInstructions(
       action,
       body,
       user,
       feePayer
     );
     const signature = await sendWithFeePayer(instructions);
+    if (after?.length) {
+      try {
+        await sendWithFeePayer(after);
+      } catch (e) {
+        // The main action already landed; a failed demo top-up is not fatal.
+        console.error(`tx/${action} follow-up failed`, e);
+      }
+    }
     return NextResponse.json({ signature, ...result });
   } catch (error) {
     if (error instanceof AuthError) {

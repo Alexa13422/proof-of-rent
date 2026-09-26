@@ -1,6 +1,6 @@
 //! LiteSVM tests. Build first: `anchor build --ignore-keys`, then `cargo test`.
 
-use crate::{accounts, instruction, DepositOutcome, Lease, LeaseStatus, Passport, ID as PROGRAM_ID};
+use crate::{accounts, instruction, Config, DepositOutcome, Lease, LeaseStatus, Passport, ID as PROGRAM_ID};
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use litesvm::LiteSVM;
 use solana_program_pack::Pack;
@@ -506,4 +506,62 @@ fn dust_in_vault_does_not_brick() {
     fx.svm.set_account(vault, acc).unwrap();
     fx.close_out(&l, lease, instruction::ReleaseFull {}.data()).unwrap();
     assert_eq!(fx.balance(&fx.landlord_token), 7);
+}
+
+impl Fx {
+    fn set_admin(&mut self, admin: &Keypair, new_admin: &Keypair) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::SetAdmin {
+                admin: admin.pubkey(),
+                new_admin: new_admin.pubkey(),
+                config: config_pda(),
+            }
+            .to_account_metas(None),
+            data: instruction::SetAdmin {}.data(),
+        };
+        self.send(ix, &[admin, new_admin])
+    }
+
+    fn update_config_as(&mut self, admin: &Keypair, fee_bps: u16) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::UpdateConfig { admin: admin.pubkey(), config: config_pda() }
+                .to_account_metas(None),
+            data: instruction::UpdateConfig {
+                treasury: self.treasury,
+                arbiter: Pubkey::new_unique(),
+                fee_bps,
+            }
+            .data(),
+        };
+        self.send(ix, &[admin])
+    }
+
+    fn config(&self) -> Config {
+        let acc = self.svm.get_account(&config_pda()).unwrap();
+        Config::try_deserialize(&mut acc.data.as_slice()).unwrap()
+    }
+}
+
+#[test]
+fn admin_handover() {
+    let mut fx = Fx::new();
+    let old = fx.admin.insecure_clone();
+    let new = Keypair::new();
+    let stranger = fx.stranger.insecure_clone();
+    fx.svm.airdrop(&new.pubkey(), 1_000_000_000).unwrap();
+    fx.svm.airdrop(&stranger.pubkey(), 1_000_000_000).unwrap();
+
+    // Only the current admin can hand over.
+    assert!(fx.set_admin(&stranger, &new).is_err());
+    fx.set_admin(&old, &new).unwrap();
+    assert_eq!(fx.config().admin, new.pubkey());
+
+    // The old admin lost control; the new one has it.
+    assert!(fx.update_config_as(&old, 200).is_err());
+    fx.update_config_as(&new, 200).unwrap();
+    assert_eq!(fx.config().fee_bps, 200);
+    // Cap still enforced.
+    assert!(fx.update_config_as(&new, 1_001).is_err());
 }

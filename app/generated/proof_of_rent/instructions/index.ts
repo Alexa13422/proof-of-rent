@@ -16,4 +16,5 @@ export * from "./initConfig";
 export * from "./proposeSettlement";
 export * from "./rejectOffer";
 export * from "./releaseFull";
+export * from "./setAdmin";
 export * from "./updateConfig";

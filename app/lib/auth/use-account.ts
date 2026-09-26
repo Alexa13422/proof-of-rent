@@ -4,6 +4,8 @@ import { useCallback, useMemo, useState } from "react";
 import { getAccessToken, usePrivy, useSigners } from "@privy-io/react-auth";
 
 const SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
+// Limits the server signer to Proof of Rent transactions (scripts/privy-policy.ts).
+const POLICY_ID = process.env.NEXT_PUBLIC_PRIVY_POLICY_ID;
 
 type SolanaWalletAccount = {
   type: "wallet";
@@ -31,12 +33,12 @@ export function useAccount() {
 
   /** One-time consent: lets our server sign on the user's behalf. */
   const enableSigning = useCallback(async () => {
-    if (!wallet || !SIGNER_ID) throw new Error("Signing is not configured");
+    if (!wallet || !SIGNER_ID || !POLICY_ID) throw new Error("Signing is not configured");
     setEnabling(true);
     try {
       await addSigners({
         address: wallet.address,
-        signers: [{ signerId: SIGNER_ID }],
+        signers: [{ signerId: SIGNER_ID, policyIds: [POLICY_ID] }],
       });
     } finally {
       setEnabling(false);
@@ -48,7 +50,7 @@ export function useAccount() {
     authenticated,
     address: wallet?.address ?? null,
     signingEnabled: Boolean(wallet?.delegated),
-    signingConfigured: Boolean(SIGNER_ID),
+    signingConfigured: Boolean(SIGNER_ID && POLICY_ID),
     enabling,
     enableSigning,
     login,
