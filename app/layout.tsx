@@ -15,8 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Solana dApp Starter",
-  description: "A minimal Next.js starter powered by @solana/kit",
+  title: {
+    default: "Proof of Rent",
+    template: "%s · Proof of Rent",
+  },
+  description:
+    "A portable, verifiable rental history that belongs to the tenant.",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
