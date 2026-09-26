@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Logo } from "@/app/components/brand/logo";
 import { LeaseHistory } from "@/app/components/lease-history";
 import { PassportCard } from "@/app/components/passport-card";
 import { PaymentTimeline } from "@/app/components/payment-timeline";
@@ -42,9 +43,8 @@ export default async function PassportPage({ params }: PassportPageProps) {
             href="/"
             className="flex min-h-11 items-center gap-2 font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            <Mark />
-            <span className="hidden sm:inline">Proof of Rent</span>
-            <span className="sm:hidden">PoR</span>
+            <Logo size={32} mark className="inline-flex sm:hidden" />
+            <Logo size={32} className="hidden sm:inline-flex" />
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -100,23 +100,5 @@ export default async function PassportPage({ params }: PassportPageProps) {
         <span className="font-mono">Record ID: {passport.id}</span>
       </footer>
     </div>
-  );
-}
-
-function Mark() {
-  return (
-    <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        className="size-4"
-      >
-        <path d="M7 3h8l4 4v14H7z" />
-        <path d="M15 3v5h5M10 13h6M10 17h4" />
-      </svg>
-    </span>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "./components/brand/logo";
 import { ClusterSelect } from "./components/cluster-select";
 import { Guilloche } from "./components/guilloche";
 import { PassportCard } from "./components/passport-card";
@@ -39,8 +40,7 @@ export default function Home() {
           href="/"
           className="flex min-h-11 items-center gap-2 font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <Mark />
-          Proof of Rent
+          <Logo size={32} />
         </Link>
         <div className="flex items-center gap-2">
           <div className="hidden sm:block">
@@ -166,23 +166,5 @@ export default function Home() {
         </div>
       </footer>
     </div>
-  );
-}
-
-function Mark() {
-  return (
-    <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        className="size-4"
-      >
-        <path d="M7 3h8l4 4v14H7z" />
-        <path d="M15 3v5h5M10 13h6M10 17h4" />
-      </svg>
-    </span>
   );
 }

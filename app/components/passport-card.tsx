@@ -1,3 +1,4 @@
+import { HoloSeal } from "@/app/components/brand/holo-seal";
 import { Guilloche } from "@/app/components/guilloche";
 import { passportFacts, type RentPassport } from "@/app/lib/mock/passport";
 
@@ -17,9 +18,11 @@ export function PassportCard({ passport, compact = false }: PassportCardProps) {
 
   return (
     <article className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
-      <div className="relative flex items-start justify-between gap-4 overflow-hidden border-b border-border px-5 py-5 sm:px-7">
+      <div
+        className={`relative overflow-hidden border-b border-border px-5 py-5 sm:px-7 ${compact ? "min-h-40" : "min-h-52"}`}
+      >
         <Guilloche className="pointer-events-none absolute inset-0 size-full text-primary opacity-25" />
-        <div className="relative">
+        <div className={compact ? "relative pr-20" : "relative pr-24 sm:pr-36"}>
           <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             Tenant passport
           </p>
@@ -30,7 +33,16 @@ export function PassportCard({ passport, compact = false }: PassportCardProps) {
             {passport.tenantReference}
           </p>
         </div>
-        <div className="relative -rotate-3 rounded-sm bg-primary px-2.5 py-2 text-center text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-primary-foreground">
+        {!compact && (
+          <HoloSeal
+            size={132}
+            hash={passport.tenantReference}
+            className="absolute -right-8 top-1/2 -translate-y-1/2 sm:right-2"
+          />
+        )}
+        <div
+          className={`absolute bottom-4 -rotate-3 rounded-sm bg-primary px-2.5 py-2 text-center text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-primary-foreground ${compact ? "right-4 sm:right-6" : "left-5 sm:left-7"}`}
+        >
           Verified
           <br />
           record
@@ -70,7 +82,7 @@ export function PassportCard({ passport, compact = false }: PassportCardProps) {
 
 function CheckIcon() {
   return (
-    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
