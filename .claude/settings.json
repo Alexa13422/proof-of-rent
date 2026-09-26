@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(node_modules/**)",
+      "Grep(node_modules/**)",
+      "Read(anchor/target/**)",
+      "Grep(anchor/target/**)",
+      "Read(.next/**)",
+      "Grep(.next/**)",
+      "Read(package-lock.json)"
+    ]
+  }
+}
