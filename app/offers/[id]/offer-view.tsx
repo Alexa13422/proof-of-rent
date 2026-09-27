@@ -23,6 +23,7 @@ import {
 } from "../../lib/chain";
 import { hashOrNull, uploadEvidence } from "../../lib/evidence";
 import { EvidenceInput, EvidenceView } from "../../components/evidence";
+import { RentMonths } from "../../components/rent-months";
 import {
   dangerButton,
   eyebrow,
@@ -98,6 +99,8 @@ export function OfferView({ id }: { id: string }) {
           {disputed && <EvidenceView hash={tenantEvidence} title="Tenant" />}
         </div>
       )}
+
+      <RentMonths lease={lease} role={role} />
 
       {checkin && <EvidenceView hash={checkin} title="Move-in condition" />}
     </div>

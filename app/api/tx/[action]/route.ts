@@ -12,6 +12,11 @@ import {
   getAcceptOfferInstructionAsync,
   getAcceptSettlementInstructionAsync,
   getCancelOfferInstruction,
+  getClaimRentInstructionAsync,
+  getConfirmRentInstruction,
+  getReclaimRentInstruction,
+  getRejectRentInstruction,
+  findRentPaymentPda,
   getClaimAfterTimeoutInstructionAsync,
   getCreateOfferInstructionAsync,
   getCreatePassportInstructionAsync,
@@ -25,7 +30,7 @@ import {
 } from "@/app/generated/proof_of_rent";
 import { AuthError, getUserSigner, resolveUserWallet } from "@/app/lib/server/privy";
 import { getFeePayerSigner } from "@/app/lib/server/fee-payer";
-import { SimulationError, programErrorFromLogs, sendWithFeePayer } from "@/app/lib/server/solana";
+import { SimulationError, programErrorFromLogs, rpc, sendWithFeePayer } from "@/app/lib/server/solana";
 import {
   DEPOSIT_MINT,
   getConfig,
@@ -232,6 +237,47 @@ async function buildInstructions(
             toTenant: parseAmount(str(body, "toTenant")),
             evidence: hash32(body, "evidence"),
           }),
+        ],
+      };
+    }
+
+    case "claim_rent": {
+      const lease = await loadLease(body, me);
+      const period = Number(str(body, "period"));
+      if (!Number.isInteger(period)) throw new BadRequest("Invalid month");
+      const paidAt = unixSeconds(str(body, "paidAt"));
+      const [rentPayment] = await findRentPaymentPda({ lease: lease.address, period });
+      const existing = await rpc.getAccountInfo(rentPayment, { encoding: "base64" }).send();
+      return {
+        instructions: [
+          existing.value
+            ? getReclaimRentInstruction({ tenant: user, lease: lease.address, rentPayment, paidAt })
+            : await getClaimRentInstructionAsync({
+                tenant: user,
+                payer: feePayer,
+                lease: lease.address,
+                period,
+                paidAt,
+              }),
+        ],
+      };
+    }
+
+    case "confirm_rent":
+    case "reject_rent": {
+      const lease = await loadLease(body, me);
+      const period = Number(str(body, "period"));
+      if (!Number.isInteger(period)) throw new BadRequest("Invalid month");
+      const [rentPayment] = await findRentPaymentPda({ lease: lease.address, period });
+      return {
+        instructions: [
+          action === "confirm_rent"
+            ? getConfirmRentInstruction({
+                landlord: user,
+                rentPayment,
+                receivedAt: unixSeconds(str(body, "receivedAt")),
+              })
+            : getRejectRentInstruction({ landlord: user, rentPayment }),
         ],
       };
     }

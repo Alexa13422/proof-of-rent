@@ -3,12 +3,26 @@ import { address } from "@solana/kit";
 import {
   DepositOutcome,
   LeaseStatus,
+  RentStatus,
   formatAmount,
+  formatDate,
   getLeasesFor,
   getPassport,
+  getRentForLandlord,
+  getRentForTenant,
+  periodLabel,
+  rentAutoAccepted,
+  rentOnTime,
   shortAddress,
+  type LeaseRecord,
+  type RentRecord,
 } from "./chain";
-import type { DepositOutcome as UiOutcome, RentPassport } from "./mock/passport";
+import type {
+  DepositOutcome as UiOutcome,
+  LandlordRecord,
+  RentPassport,
+  RentPayment,
+} from "./mock/passport";
 
 const MONTH = 30n * 24n * 60n * 60n;
 
@@ -27,24 +41,73 @@ function monthYear(ts: bigint) {
   });
 }
 
+const period = (l: LeaseRecord) => `${monthYear(l.startTs)} – ${monthYear(l.endTs)}`;
+
+/** Only months that count: confirmed, or claimed and left unanswered. */
+function toPayments(records: RentRecord[], rent: bigint, now: bigint): RentPayment[] {
+  return records
+    .filter((r) => r.status === RentStatus.Confirmed || rentAutoAccepted(r, now))
+    .sort((a, b) => b.period - a.period)
+    .map((r) => ({
+      month: periodLabel(r.period),
+      paidAt: formatDate(r.status === RentStatus.Confirmed ? r.receivedAt : r.paidAt),
+      amount: formatAmount(rent),
+      timing: rentOnTime(r) ? "on-time" : "late",
+      confirmation: r.status === RentStatus.Confirmed ? "landlord-confirmed" : "no-objection",
+    }));
+}
+
 export async function getChainPassport(owner: string): Promise<RentPassport | null> {
   const ownerAddress = address(owner);
   const passport = await getPassport(ownerAddress);
   if (!passport) return null;
+  const now = BigInt(Math.floor(Date.now() / 1000));
 
-  const leases = await getLeasesFor(ownerAddress, "tenant");
-  const closed = leases.filter(
+  // Sequential: the public devnet RPC rate-limits bursts.
+  const asTenant = await getLeasesFor(ownerAddress, "tenant");
+  const asLandlord = await getLeasesFor(ownerAddress, "landlord");
+  const tenantRent = await getRentForTenant(ownerAddress);
+  const landlordRent = asLandlord.length ? await getRentForLandlord(ownerAddress) : [];
+
+  const closed = asTenant.filter(
     (l) => l.status === LeaseStatus.Closed && l.endTs - l.startTs >= 3n * MONTH
   );
 
   // Landlord track record, for the anti-fake "landlord with N leases" line.
   const landlordCounts = new Map<string, number>();
-  await Promise.all(
-    [...new Set(closed.map((l) => l.landlord))].map(async (landlord) => {
-      const p = await getPassport(landlord);
-      landlordCounts.set(landlord, p?.landlordLeasesClosed ?? 0);
-    })
-  );
+  for (const landlord of new Set(closed.map((l) => l.landlord))) {
+    const p = await getPassport(landlord);
+    landlordCounts.set(landlord, p?.landlordLeasesClosed ?? 0);
+  }
+
+  const rentByLease = new Map<string, RentRecord[]>();
+  for (const r of tenantRent) rentByLease.set(r.lease, [...(rentByLease.get(r.lease) ?? []), r]);
+  const rentLease = asTenant
+    .filter((l) => l.status !== LeaseStatus.Offered)
+    .find((l) => toPayments(rentByLease.get(l.address) ?? [], l.monthlyRent, now).length);
+
+  const landlordClosed = asLandlord.filter((l) => l.status === LeaseStatus.Closed);
+  const landlord: LandlordRecord | undefined =
+    asLandlord.some((l) => l.status !== LeaseStatus.Offered && l.status !== LeaseStatus.Rejected && l.status !== LeaseStatus.Cancelled)
+      ? {
+          leasesClosed: passport.landlordLeasesClosed,
+          fullReturns: passport.landlordFullReturns,
+          disputes: asLandlord.filter(
+            (l) => l.status === LeaseStatus.Disputed || l.outcome === DepositOutcome.ArbiterResolved
+          ).length,
+          rentConfirmed: landlordRent.filter((r) => r.status === RentStatus.Confirmed).length,
+          rentRejected: landlordRent.reduce((n, r) => n + r.rejections, 0),
+          rentSilent: landlordRent.filter((r) => rentAutoAccepted(r, now)).length,
+          leases: landlordClosed.map((l) => ({
+            id: l.address,
+            area: l.area,
+            period: period(l),
+            deposit: formatAmount(l.depositAmount),
+            returned: formatAmount(l.amountToTenant),
+            outcome: OUTCOME[l.outcome] ?? "returned-in-full",
+          })),
+        }
+      : undefined;
 
   return {
     id: owner,
@@ -57,7 +120,7 @@ export async function getChainPassport(owner: string): Promise<RentPassport | nu
     leases: closed.map((l) => ({
       id: l.address,
       area: l.area,
-      period: `${monthYear(l.startTs)} – ${monthYear(l.endTs)}`,
+      period: period(l),
       months: Number((l.endTs - l.startTs) / MONTH),
       rent: formatAmount(l.monthlyRent),
       deposit: formatAmount(l.depositAmount),
@@ -70,7 +133,14 @@ export async function getChainPassport(owner: string): Promise<RentPassport | nu
             ? `Disputed; the arbiter awarded ${formatAmount(l.amountToTenant)} of ${formatAmount(l.depositAmount)}.`
             : undefined,
       landlordLeases: landlordCounts.get(l.landlord) ?? 0,
-      payments: [],
+      payments: toPayments(rentByLease.get(l.address) ?? [], l.monthlyRent, now),
     })),
+    rentLog: rentLease
+      ? {
+          area: rentLease.area,
+          payments: toPayments(rentByLease.get(rentLease.address) ?? [], rentLease.monthlyRent, now),
+        }
+      : undefined,
+    landlord,
   };
 }

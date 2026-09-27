@@ -118,7 +118,8 @@ wsl -d Ubuntu -- bash -lc "cd /mnt/c/Programming/SOL/proof-of-rent && NO_DNA=1 n
   `caution` і `destructive` — лише для результатів/спорів і завжди зі словом поруч. Жодних сирих кольорів
   Tailwind (`emerald-*`, `blue-*`…) — тільки токени з `app/globals.css`.
 - Фон не суцільний: паспортний гільйош-візерунок `<Guilloche>` (`app/components/guilloche.tsx`) тонкими лініями
-  `text-primary` з `opacity-25`–`35` — у hero лендінгу і в шапці картки паспорта. Не більше одного на екран-блок,
+  `text-primary` з `opacity-25`–`35` — у шапці картки паспорта; у hero лендінгу — кругова печатка-розетка з променями
+  `<SealRosette>` (`app/components/seal-rosette.tsx`). Не більше одного на екран-блок,
   ніколи під дрібним текстом без суцільної підкладки.
 - Паспорт = результат кауції насамперед (`LeaseHistory`, штампи «Returned in full / Partly returned / Arbiter ruled»),
   оплати — другорядно (`PaymentTimeline`: «Landlord confirmed» / «No objection»). Суми польським форматом: «3 200 PLN».

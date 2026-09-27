@@ -9,3 +9,4 @@
 export * from "./config";
 export * from "./lease";
 export * from "./passport";
+export * from "./rentPayment";

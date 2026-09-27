@@ -24,8 +24,32 @@ export type Lease = {
   payments: RentPayment[];
 };
 
+export type LandlordLease = {
+  id: string;
+  area: string;
+  period: string;
+  deposit: string;
+  returned: string;
+  outcome: DepositOutcome;
+};
+
+export type LandlordRecord = {
+  leasesClosed: number;
+  fullReturns: number;
+  disputes: number;
+  /** Rent months the landlord confirmed / rejected / let pass without answer. */
+  rentConfirmed: number;
+  rentRejected: number;
+  rentSilent: number;
+  leases: LandlordLease[];
+};
+
 export type RentPassport = {
   id: string;
+  /** Rent log shown under the history: newest lease that has payments. */
+  rentLog?: { area: string; payments: RentPayment[] };
+  /** Present if this user has rented out at least once. */
+  landlord?: LandlordRecord;
   tenantLabel: string;
   tenantReference: string;
   verifiedSince: string;

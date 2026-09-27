@@ -8,3 +8,4 @@
 
 export * from "./depositOutcome";
 export * from "./leaseStatus";
+export * from "./rentStatus";

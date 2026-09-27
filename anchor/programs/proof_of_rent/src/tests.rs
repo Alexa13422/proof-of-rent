@@ -1,6 +1,6 @@
 //! LiteSVM tests. Build first: `anchor build --ignore-keys`, then `cargo test`.
 
-use crate::{accounts, instruction, Config, DepositOutcome, Lease, LeaseStatus, Passport, ID as PROGRAM_ID};
+use crate::{accounts, instruction, Config, DepositOutcome, Lease, LeaseStatus, Passport, RentPayment, RentStatus, ID as PROGRAM_ID};
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use litesvm::LiteSVM;
 use solana_program_pack::Pack;
@@ -771,3 +771,131 @@ fn resolve_full_award_counts_as_full_return() {
     assert_eq!(fx.passport(&fx.tenant.pubkey()).returned_in_full, 1);
 }
 
+
+// ------------------------------------------------------------ monthly rent
+// T0 = 2023-11-14 22:13 UTC; lease runs to ~2024-02-12.
+
+const DEC_2023: u32 = 202312;
+const DEC_START: i64 = 1_701_388_800; // 2023-12-01
+const JAN_START: i64 = 1_704_067_200; // 2024-01-01
+const DAY: i64 = crate::DAY;
+
+fn rent_pda(lease: &Pubkey, period: u32) -> Pubkey {
+    pda(&[crate::RENT_SEED, lease.as_ref(), &period.to_le_bytes()])
+}
+
+impl Fx {
+    fn at(&mut self, ts: i64) {
+        let mut clock = self.svm.get_sysvar::<Clock>();
+        clock.unix_timestamp = ts;
+        self.svm.set_sysvar(&clock);
+    }
+
+    fn claim_rent(&mut self, signer: &Keypair, lease: Pubkey, period: u32, paid_at: i64) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::ClaimRent {
+                tenant: signer.pubkey(),
+                payer: self.payer.pubkey(),
+                lease,
+                rent_payment: rent_pda(&lease, period),
+                system_program: system_program(),
+            }
+            .to_account_metas(None),
+            data: instruction::ClaimRent { period, paid_at }.data(),
+        };
+        self.send(ix, &[signer])
+    }
+
+    fn reclaim_rent(&mut self, signer: &Keypair, lease: Pubkey, period: u32, paid_at: i64) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::ReclaimRent { tenant: signer.pubkey(), lease, rent_payment: rent_pda(&lease, period) }
+                .to_account_metas(None),
+            data: instruction::ReclaimRent { paid_at }.data(),
+        };
+        self.send(ix, &[signer])
+    }
+
+    fn review_rent(&mut self, signer: &Keypair, lease: Pubkey, period: u32, received_at: Option<i64>) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::ReviewRent { landlord: signer.pubkey(), rent_payment: rent_pda(&lease, period) }
+                .to_account_metas(None),
+            data: match received_at {
+                Some(received_at) => instruction::ConfirmRent { received_at }.data(),
+                None => instruction::RejectRent {}.data(),
+            },
+        };
+        self.send(ix, &[signer])
+    }
+
+    fn rent(&self, lease: &Pubkey, period: u32) -> RentPayment {
+        let acc = self.svm.get_account(&rent_pda(lease, period)).unwrap();
+        RentPayment::try_deserialize(&mut acc.data.as_slice()).unwrap()
+    }
+}
+
+#[test]
+fn period_bounds_calendar() {
+    assert_eq!(crate::period_bounds(DEC_2023).unwrap(), (DEC_START, JAN_START));
+    assert_eq!(crate::period_bounds(202402).unwrap().1 - crate::period_bounds(202402).unwrap().0, 29 * DAY);
+    assert!(crate::period_bounds(202313).is_err());
+}
+
+#[test]
+fn rent_claim_window_and_periods() {
+    let (mut fx, lease) = Fx::active();
+    let (t, l) = (fx.tenant.insecure_clone(), fx.landlord.insecure_clone());
+    fx.at(JAN_START - 11 * DAY);
+    assert!(fx.claim_rent(&t, lease, DEC_2023, DEC_START + DAY).is_err(), "not open yet");
+    fx.at(JAN_START - 10 * DAY);
+    assert!(fx.claim_rent(&t, lease, 202311, DEC_START - DAY).is_err(), "signing month is not claimable");
+    assert!(fx.claim_rent(&t, lease, 202403, DEC_START).is_err(), "after the lease");
+    assert!(fx.claim_rent(&l, lease, DEC_2023, DEC_START + DAY).is_err(), "landlord cannot claim");
+    assert!(fx.claim_rent(&t, lease, DEC_2023, JAN_START).is_err(), "paid_at in the future");
+    fx.claim_rent(&t, lease, DEC_2023, DEC_START + 5 * DAY).unwrap();
+    assert!(fx.claim_rent(&t, lease, DEC_2023, DEC_START + 5 * DAY).is_err(), "once per month");
+    let r = fx.rent(&lease, DEC_2023);
+    assert_eq!((r.status, r.paid_at, r.tenant, r.landlord), (RentStatus::Claimed, DEC_START + 5 * DAY, t.pubkey(), l.pubkey()));
+}
+
+#[test]
+fn rent_confirm_by_landlord_within_window() {
+    let (mut fx, lease) = Fx::active();
+    let (t, l, s) = (fx.tenant.insecure_clone(), fx.landlord.insecure_clone(), fx.stranger.insecure_clone());
+    fx.at(JAN_START - 5 * DAY);
+    fx.claim_rent(&t, lease, DEC_2023, DEC_START + 3 * DAY).unwrap();
+    assert!(fx.review_rent(&t, lease, DEC_2023, Some(DEC_START)).is_err(), "tenant");
+    assert!(fx.review_rent(&s, lease, DEC_2023, Some(DEC_START)).is_err(), "stranger");
+    assert!(fx.review_rent(&l, lease, DEC_2023, Some(JAN_START)).is_err(), "received in the future");
+    fx.review_rent(&l, lease, DEC_2023, Some(DEC_START + 4 * DAY)).unwrap();
+    let r = fx.rent(&lease, DEC_2023);
+    assert_eq!((r.status, r.received_at), (RentStatus::Confirmed, DEC_START + 4 * DAY));
+    assert!(fx.review_rent(&l, lease, DEC_2023, None).is_err(), "cannot reject after confirming");
+}
+
+#[test]
+fn rent_reject_then_resubmit_then_silence() {
+    let (mut fx, lease) = Fx::active();
+    let (t, l) = (fx.tenant.insecure_clone(), fx.landlord.insecure_clone());
+    fx.at(JAN_START - 2 * DAY);
+    fx.claim_rent(&t, lease, DEC_2023, DEC_START + DAY).unwrap();
+    assert!(fx.reclaim_rent(&t, lease, DEC_2023, DEC_START + DAY).is_err(), "not rejected");
+    fx.review_rent(&l, lease, DEC_2023, None).unwrap();
+    assert_eq!(fx.rent(&lease, DEC_2023).rejections, 1);
+    fx.at(JAN_START + DAY);
+    fx.reclaim_rent(&t, lease, DEC_2023, DEC_START + 20 * DAY).unwrap();
+    let r = fx.rent(&lease, DEC_2023);
+    assert_eq!((r.status, r.claimed_at, r.rejections), (RentStatus::Claimed, JAN_START + DAY, 1));
+    fx.at(JAN_START + 8 * DAY + 1);
+    assert!(fx.review_rent(&l, lease, DEC_2023, None).is_err(), "review window over: stays Claimed = no objection");
+}
+
+#[test]
+fn rent_claim_needs_live_lease() {
+    let (mut fx, lease) = Fx::offered();
+    let t = fx.tenant.insecure_clone();
+    fx.at(JAN_START - DAY);
+    assert!(fx.claim_rent(&t, lease, DEC_2023, DEC_START).is_err(), "not accepted yet");
+}

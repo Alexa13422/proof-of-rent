@@ -75,3 +75,15 @@ All criteria met; no fund-loss / account-substitution issues found. Note: Lease 
 fields, existing devnet leases won't deserialize after upgrade without migration
 (migration attempt reverted at user's request; open decision before deploy).
 ---
+
+## 2026-09-27T03:10 — Monthly rent claims + landlord passport (feat/disputes)
+Criteria:
+- UTC calendar months YYYYMM; first payable = month after lease start; claim opens 10 days before month end
+- Tenant-only claim/reclaim (reclaim only after Rejected); landlord-only confirm/reject within 7 days
+- Unanswered 7 days = accepted; on time = received (or paid if auto) before month end
+- Rust period_bounds and TS periodBounds/leasePeriods agree
+Evidence: cargo test 36 passed / 0 failed (5 new rent tests); tsc + eslint clean; passport page screenshot
+Critic (codex) verdict: FAIL -> fixed
+TS leasePeriods could list years outside the program's 2000–2200 range; now filtered to the same range.
+Auth, account binding, windows, auto-accept and on-time logic reported correct.
+---

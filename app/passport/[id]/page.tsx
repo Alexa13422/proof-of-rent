@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { address } from "@solana/kit";
+import { LandlordHistory } from "@/app/components/landlord-history";
 import { LeaseHistory } from "@/app/components/lease-history";
 import { PassportActivity } from "@/app/components/passport-activity";
 import { PassportCard } from "@/app/components/passport-card";
@@ -45,6 +46,9 @@ export default async function PassportPage({ params }: PassportPageProps) {
 
   if (!passport) notFound();
   const latest = passport.leases[0];
+  const rentLog =
+    passport.rentLog ??
+    (latest?.payments.length ? { area: latest.area, payments: latest.payments } : undefined);
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -60,8 +64,8 @@ export default async function PassportPage({ params }: PassportPageProps) {
             <h1 className="text-3xl font-medium sm:text-4xl">Rent passport</h1>
           </div>
           <p className="max-w-xs text-sm leading-6 text-muted sm:text-right">
-            How this tenant’s leases ended and how rent was paid. No private
-            details are shown.
+            How this person’s leases ended, how rent was paid and, if they
+            rent out, how they treated tenants. No private details are shown.
           </p>
         </div>
 
@@ -78,12 +82,15 @@ export default async function PassportPage({ params }: PassportPageProps) {
           )}
         </div>
 
-        {latest && latest.payments.length > 0 && (
+        {rentLog && (
           <div className="mt-12">
-            <PaymentTimeline
-              payments={latest.payments}
-              leaseArea={latest.area}
-            />
+            <PaymentTimeline payments={rentLog.payments} leaseArea={rentLog.area} />
+          </div>
+        )}
+
+        {passport.landlord && (
+          <div className="mt-12">
+            <LandlordHistory record={passport.landlord} />
           </div>
         )}
 

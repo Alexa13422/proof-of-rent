@@ -21,13 +21,17 @@ import {
   parseAcceptSettlementInstruction,
   parseCancelOfferInstruction,
   parseClaimAfterTimeoutInstruction,
+  parseClaimRentInstruction,
+  parseConfirmRentInstruction,
   parseCreateOfferInstruction,
   parseCreatePassportInstruction,
   parseFinalizeSettlementInstruction,
   parseInitConfigInstruction,
   parseOpenDisputeInstruction,
   parseProposeSettlementInstruction,
+  parseReclaimRentInstruction,
   parseRejectOfferInstruction,
+  parseRejectRentInstruction,
   parseReleaseFullInstruction,
   parseResolveDisputeInstruction,
   parseSetAdminInstruction,
@@ -37,13 +41,17 @@ import {
   type ParsedAcceptSettlementInstruction,
   type ParsedCancelOfferInstruction,
   type ParsedClaimAfterTimeoutInstruction,
+  type ParsedClaimRentInstruction,
+  type ParsedConfirmRentInstruction,
   type ParsedCreateOfferInstruction,
   type ParsedCreatePassportInstruction,
   type ParsedFinalizeSettlementInstruction,
   type ParsedInitConfigInstruction,
   type ParsedOpenDisputeInstruction,
   type ParsedProposeSettlementInstruction,
+  type ParsedReclaimRentInstruction,
   type ParsedRejectOfferInstruction,
+  type ParsedRejectRentInstruction,
   type ParsedReleaseFullInstruction,
   type ParsedResolveDisputeInstruction,
   type ParsedSetAdminInstruction,
@@ -58,6 +66,7 @@ export enum ProofOfRentAccount {
   Config,
   Lease,
   Passport,
+  RentPayment,
 }
 
 export function identifyProofOfRentAccount(
@@ -97,6 +106,17 @@ export function identifyProofOfRentAccount(
   ) {
     return ProofOfRentAccount.Passport;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([58, 166, 198, 99, 158, 45, 46, 74]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentAccount.RentPayment;
+  }
   throw new Error(
     "The provided account could not be identified as a proofOfRent account.",
   );
@@ -107,13 +127,17 @@ export enum ProofOfRentInstruction {
   AcceptSettlement,
   CancelOffer,
   ClaimAfterTimeout,
+  ClaimRent,
+  ConfirmRent,
   CreateOffer,
   CreatePassport,
   FinalizeSettlement,
   InitConfig,
   OpenDispute,
   ProposeSettlement,
+  ReclaimRent,
   RejectOffer,
+  RejectRent,
   ReleaseFull,
   ResolveDispute,
   SetAdmin,
@@ -168,6 +192,28 @@ export function identifyProofOfRentInstruction(
     )
   ) {
     return ProofOfRentInstruction.ClaimAfterTimeout;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([57, 233, 51, 137, 102, 101, 26, 101]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.ClaimRent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([243, 91, 199, 25, 226, 125, 12, 146]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.ConfirmRent;
   }
   if (
     containsBytes(
@@ -239,12 +285,34 @@ export function identifyProofOfRentInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([218, 200, 19, 197, 227, 89, 192, 22]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.ReclaimRent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([154, 107, 238, 8, 171, 64, 222, 56]),
       ),
       0,
     )
   ) {
     return ProofOfRentInstruction.RejectOffer;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 174, 83, 156, 169, 238, 192, 189]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.RejectRent;
   }
   if (
     containsBytes(
@@ -322,6 +390,12 @@ export type ParsedProofOfRentInstruction<
       instructionType: ProofOfRentInstruction.ClaimAfterTimeout;
     } & ParsedClaimAfterTimeoutInstruction<TProgram>)
   | ({
+      instructionType: ProofOfRentInstruction.ClaimRent;
+    } & ParsedClaimRentInstruction<TProgram>)
+  | ({
+      instructionType: ProofOfRentInstruction.ConfirmRent;
+    } & ParsedConfirmRentInstruction<TProgram>)
+  | ({
       instructionType: ProofOfRentInstruction.CreateOffer;
     } & ParsedCreateOfferInstruction<TProgram>)
   | ({
@@ -340,8 +414,14 @@ export type ParsedProofOfRentInstruction<
       instructionType: ProofOfRentInstruction.ProposeSettlement;
     } & ParsedProposeSettlementInstruction<TProgram>)
   | ({
+      instructionType: ProofOfRentInstruction.ReclaimRent;
+    } & ParsedReclaimRentInstruction<TProgram>)
+  | ({
       instructionType: ProofOfRentInstruction.RejectOffer;
     } & ParsedRejectOfferInstruction<TProgram>)
+  | ({
+      instructionType: ProofOfRentInstruction.RejectRent;
+    } & ParsedRejectRentInstruction<TProgram>)
   | ({
       instructionType: ProofOfRentInstruction.ReleaseFull;
     } & ParsedReleaseFullInstruction<TProgram>)
@@ -391,6 +471,20 @@ export function parseProofOfRentInstruction<TProgram extends string>(
         ...parseClaimAfterTimeoutInstruction(instruction),
       };
     }
+    case ProofOfRentInstruction.ClaimRent: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.ClaimRent,
+        ...parseClaimRentInstruction(instruction),
+      };
+    }
+    case ProofOfRentInstruction.ConfirmRent: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.ConfirmRent,
+        ...parseConfirmRentInstruction(instruction),
+      };
+    }
     case ProofOfRentInstruction.CreateOffer: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -433,11 +527,25 @@ export function parseProofOfRentInstruction<TProgram extends string>(
         ...parseProposeSettlementInstruction(instruction),
       };
     }
+    case ProofOfRentInstruction.ReclaimRent: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.ReclaimRent,
+        ...parseReclaimRentInstruction(instruction),
+      };
+    }
     case ProofOfRentInstruction.RejectOffer: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: ProofOfRentInstruction.RejectOffer,
         ...parseRejectOfferInstruction(instruction),
+      };
+    }
+    case ProofOfRentInstruction.RejectRent: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.RejectRent,
+        ...parseRejectRentInstruction(instruction),
       };
     }
     case ProofOfRentInstruction.ReleaseFull: {

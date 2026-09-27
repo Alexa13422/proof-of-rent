@@ -23,6 +23,10 @@ const LABELS: Record<string, string> = {
   ClaimAfterTimeout: "Deposit claimed after the return window",
   FinalizeSettlement: "Deposit settled (proposal not contested)",
   ResolveDispute: "Deposit dispute decided by the arbiter",
+  ClaimRent: "Rent marked as paid",
+  ReclaimRent: "Rent payment resubmitted",
+  ConfirmRent: "Rent payment confirmed by landlord",
+  RejectRent: "Rent payment rejected by landlord",
 };
 
 export type PassportEvent = {

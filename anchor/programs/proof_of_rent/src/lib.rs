@@ -26,6 +26,7 @@ pub const CONFIG_SEED: &[u8] = b"config";
 pub const PASSPORT_SEED: &[u8] = b"passport";
 pub const LEASE_SEED: &[u8] = b"lease";
 pub const VAULT_SEED: &[u8] = b"vault";
+pub const RENT_SEED: &[u8] = b"rent";
 
 /// District-level label only ("Warsaw · Mokotów"), never a street address.
 pub const MAX_AREA_LEN: usize = 48;
@@ -34,6 +35,11 @@ pub const MAX_FEE_BPS: u16 = 1_000;
 pub const SECONDS_PER_MONTH: i64 = 30 * 24 * 60 * 60;
 /// Dispute bond the tenant posts when disputing: 5% of the deposit.
 pub const DISPUTE_BOND_BPS: u64 = 500;
+pub const DAY: i64 = 24 * 60 * 60;
+/// Tenant can mark a month paid from this long before the month ends.
+pub const RENT_CLAIM_OPENS: i64 = 10 * DAY;
+/// Landlord confirms or rejects within this window; silence = accepted.
+pub const RENT_REVIEW_WINDOW: i64 = 7 * DAY;
 
 #[program]
 pub mod proof_of_rent {
@@ -293,6 +299,56 @@ pub mod proof_of_rent {
         pay_out(&a.close(), &mut a.lease, &mut a.tenant_passport, &mut a.landlord_passport, deposit, 0, deposit, DepositOutcome::TimeoutClaim)
     }
 
+    /// Tenant marks calendar month `period` (YYYYMM, UTC) as paid on
+    /// `paid_at`. Rent for a month is due by its last day. The month the
+    /// lease starts in is paid at signing, so the first period is the next
+    /// one. Opens 10 days before the month ends; late claims are allowed.
+    pub fn claim_rent(ctx: Context<ClaimRent>, period: u32, paid_at: i64) -> Result<()> {
+        let lease = &ctx.accounts.lease;
+        let rent = &mut ctx.accounts.rent_payment;
+        rent.lease = lease.key();
+        rent.tenant = lease.tenant;
+        rent.landlord = lease.landlord;
+        rent.period = period;
+        rent.rejections = 0;
+        rent.bump = ctx.bumps.rent_payment;
+        submit_rent_claim(lease, rent, paid_at)
+    }
+
+    /// Tenant resubmits a month the landlord rejected.
+    pub fn reclaim_rent(ctx: Context<ReclaimRent>, paid_at: i64) -> Result<()> {
+        require!(
+            ctx.accounts.rent_payment.status == RentStatus::Rejected,
+            PorError::InvalidStatus
+        );
+        submit_rent_claim(&ctx.accounts.lease, &mut ctx.accounts.rent_payment, paid_at)
+    }
+
+    /// Landlord confirms, with the date the money arrived. On time = arrived
+    /// by the end of the month.
+    pub fn confirm_rent(ctx: Context<ReviewRent>, received_at: i64) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let rent = &mut ctx.accounts.rent_payment;
+        review_window_open(rent, now)?;
+        let (start, _) = period_bounds(rent.period)?;
+        require!(received_at >= start && received_at <= now, PorError::InvalidTimeParams);
+        rent.status = RentStatus::Confirmed;
+        rent.received_at = received_at;
+        rent.reviewed_at = now;
+        Ok(())
+    }
+
+    /// Landlord says the money did not arrive. The tenant may resubmit.
+    pub fn reject_rent(ctx: Context<ReviewRent>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let rent = &mut ctx.accounts.rent_payment;
+        review_window_open(rent, now)?;
+        rent.status = RentStatus::Rejected;
+        rent.rejections = rent.rejections.saturating_add(1);
+        rent.reviewed_at = now;
+        Ok(())
+    }
+
     /// Tenant rejects the proposal and escalates to the arbiter, posting a
     /// bond (5% of the deposit) into the vault. `evidence` = their statement.
     pub fn open_dispute(ctx: Context<OpenDispute>, evidence: [u8; 32]) -> Result<()> {
@@ -389,6 +445,50 @@ pub mod proof_of_rent {
             DepositOutcome::ArbiterResolved,
         )
     }
+}
+
+fn submit_rent_claim(lease: &Lease, rent: &mut RentPayment, paid_at: i64) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        lease.status == LeaseStatus::Active || lease.status == LeaseStatus::Disputed,
+        PorError::InvalidStatus
+    );
+    let (start, end) = period_bounds(rent.period)?;
+    // First period is the month after the one the lease starts in.
+    require!(start > lease.start_ts && start < lease.end_ts, PorError::InvalidPeriod);
+    require!(now >= end - RENT_CLAIM_OPENS, PorError::RentClaimNotOpen);
+    require!(paid_at >= start && paid_at <= now, PorError::InvalidTimeParams);
+    rent.status = RentStatus::Claimed;
+    rent.paid_at = paid_at;
+    rent.claimed_at = now;
+    rent.received_at = 0;
+    rent.reviewed_at = 0;
+    Ok(())
+}
+
+fn review_window_open(rent: &RentPayment, now: i64) -> Result<()> {
+    require!(rent.status == RentStatus::Claimed, PorError::InvalidStatus);
+    require!(now <= rent.claimed_at + RENT_REVIEW_WINDOW, PorError::ReviewWindowClosed);
+    Ok(())
+}
+
+/// Days since 1970-01-01 for a proleptic Gregorian date (H. Hinnant).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// `[start, end)` of calendar month YYYYMM in unix seconds (UTC).
+pub fn period_bounds(period: u32) -> Result<(i64, i64)> {
+    let (y, m) = ((period / 100) as i64, (period % 100) as i64);
+    require!((2000..=2200).contains(&y) && (1..=12).contains(&m), PorError::InvalidPeriod);
+    let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+    Ok((days_from_civil(y, m, 1) * DAY, days_from_civil(ny, nm, 1) * DAY))
 }
 
 fn return_deadline(lease: &Lease) -> Result<i64> {
@@ -593,6 +693,34 @@ pub struct Lease {
     pub landlord_evidence: [u8; 32],
 }
 
+/// One calendar month of rent, claimed by the tenant, reviewed by the landlord.
+#[account]
+#[derive(InitSpace)]
+pub struct RentPayment {
+    pub lease: Pubkey,    // offset 8  (memcmp: a lease's months)
+    pub tenant: Pubkey,   // offset 40 (memcmp: tenant record)
+    pub landlord: Pubkey, // offset 72 (memcmp: landlord record)
+    /// YYYYMM, UTC calendar month.
+    pub period: u32,
+    pub status: RentStatus,
+    /// Date the tenant says they paid.
+    pub paid_at: i64,
+    pub claimed_at: i64,
+    /// Date the landlord says the money arrived (0 until confirmed).
+    pub received_at: i64,
+    pub reviewed_at: i64,
+    pub rejections: u8,
+    pub bump: u8,
+}
+
+/// `Claimed` older than RENT_REVIEW_WINDOW counts as accepted (no objection).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub enum RentStatus {
+    Claimed,
+    Confirmed,
+    Rejected,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum LeaseStatus {
     Offered,
@@ -751,6 +879,41 @@ pub struct OpenDispute<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(period: u32)]
+pub struct ClaimRent<'info> {
+    pub tenant: Signer<'info>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(has_one = tenant @ PorError::Unauthorized)]
+    pub lease: Box<Account<'info, Lease>>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + RentPayment::INIT_SPACE,
+        seeds = [RENT_SEED, lease.key().as_ref(), &period.to_le_bytes()],
+        bump
+    )]
+    pub rent_payment: Account<'info, RentPayment>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ReclaimRent<'info> {
+    pub tenant: Signer<'info>,
+    #[account(has_one = tenant @ PorError::Unauthorized)]
+    pub lease: Box<Account<'info, Lease>>,
+    #[account(mut, has_one = lease @ PorError::Unauthorized)]
+    pub rent_payment: Account<'info, RentPayment>,
+}
+
+#[derive(Accounts)]
+pub struct ReviewRent<'info> {
+    pub landlord: Signer<'info>,
+    #[account(mut, has_one = landlord @ PorError::Unauthorized)]
+    pub rent_payment: Account<'info, RentPayment>,
+}
+
+#[derive(Accounts)]
 pub struct SubmitEvidence<'info> {
     pub signer: Signer<'info>,
     #[account(mut)]
@@ -865,4 +1028,10 @@ pub enum PorError {
     ResponseWindowClosed,
     #[msg("There is a pending return proposal")]
     ProposalPending,
+    #[msg("This month is not part of the lease")]
+    InvalidPeriod,
+    #[msg("You can mark this month paid 10 days before it ends")]
+    RentClaimNotOpen,
+    #[msg("The 7-day review window is over")]
+    ReviewWindowClosed,
 }

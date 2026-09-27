@@ -10,5 +10,6 @@ export * from "./config";
 export * from "./landlordPassport";
 export * from "./lease";
 export * from "./passport";
+export * from "./rentPayment";
 export * from "./tenantPassport";
 export * from "./vault";

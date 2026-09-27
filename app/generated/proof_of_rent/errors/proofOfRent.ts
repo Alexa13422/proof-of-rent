@@ -48,6 +48,12 @@ export const PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN = 0x177e; // 6014
 export const PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED = 0x177f; // 6015
 /** ProposalPending: There is a pending return proposal */
 export const PROOF_OF_RENT_ERROR__PROPOSAL_PENDING = 0x1780; // 6016
+/** InvalidPeriod: This month is not part of the lease */
+export const PROOF_OF_RENT_ERROR__INVALID_PERIOD = 0x1781; // 6017
+/** RentClaimNotOpen: You can mark this month paid 10 days before it ends */
+export const PROOF_OF_RENT_ERROR__RENT_CLAIM_NOT_OPEN = 0x1782; // 6018
+/** ReviewWindowClosed: The 7-day review window is over */
+export const PROOF_OF_RENT_ERROR__REVIEW_WINDOW_CLOSED = 0x1783; // 6019
 
 export type ProofOfRentError =
   | typeof PROOF_OF_RENT_ERROR__ACCEPT_DEADLINE_PASSED
@@ -55,15 +61,18 @@ export type ProofOfRentError =
   | typeof PROOF_OF_RENT_ERROR__AREA_TOO_LONG
   | typeof PROOF_OF_RENT_ERROR__INVALID_AMOUNT
   | typeof PROOF_OF_RENT_ERROR__INVALID_PARTIES
+  | typeof PROOF_OF_RENT_ERROR__INVALID_PERIOD
   | typeof PROOF_OF_RENT_ERROR__INVALID_STATUS
   | typeof PROOF_OF_RENT_ERROR__INVALID_TIME_PARAMS
   | typeof PROOF_OF_RENT_ERROR__MATH_OVERFLOW
   | typeof PROOF_OF_RENT_ERROR__NO_SETTLEMENT_OFFER
   | typeof PROOF_OF_RENT_ERROR__PROPOSAL_PENDING
+  | typeof PROOF_OF_RENT_ERROR__RENT_CLAIM_NOT_OPEN
   | typeof PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED
   | typeof PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN
   | typeof PROOF_OF_RENT_ERROR__RETURN_TIMEOUT_NOT_REACHED
   | typeof PROOF_OF_RENT_ERROR__RETURN_WINDOW_CLOSED
+  | typeof PROOF_OF_RENT_ERROR__REVIEW_WINDOW_CLOSED
   | typeof PROOF_OF_RENT_ERROR__SETTLEMENT_MISMATCH
   | typeof PROOF_OF_RENT_ERROR__UNAUTHORIZED
   | typeof PROOF_OF_RENT_ERROR__WRONG_TOKEN_ACCOUNT;
@@ -76,15 +85,18 @@ if (process.env.NODE_ENV !== "production") {
     [PROOF_OF_RENT_ERROR__AREA_TOO_LONG]: `Area label is too long`,
     [PROOF_OF_RENT_ERROR__INVALID_AMOUNT]: `Invalid amount`,
     [PROOF_OF_RENT_ERROR__INVALID_PARTIES]: `Landlord and tenant must be different users`,
+    [PROOF_OF_RENT_ERROR__INVALID_PERIOD]: `This month is not part of the lease`,
     [PROOF_OF_RENT_ERROR__INVALID_STATUS]: `Lease is not in the right state for this action`,
     [PROOF_OF_RENT_ERROR__INVALID_TIME_PARAMS]: `Invalid dates or time windows`,
     [PROOF_OF_RENT_ERROR__MATH_OVERFLOW]: `Arithmetic overflow`,
     [PROOF_OF_RENT_ERROR__NO_SETTLEMENT_OFFER]: `There is no settlement offer`,
     [PROOF_OF_RENT_ERROR__PROPOSAL_PENDING]: `There is a pending return proposal`,
+    [PROOF_OF_RENT_ERROR__RENT_CLAIM_NOT_OPEN]: `You can mark this month paid 10 days before it ends`,
     [PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED]: `The time to respond to the proposal is over`,
     [PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN]: `The tenant can still respond to the proposal`,
     [PROOF_OF_RENT_ERROR__RETURN_TIMEOUT_NOT_REACHED]: `The deposit cannot be claimed yet`,
     [PROOF_OF_RENT_ERROR__RETURN_WINDOW_CLOSED]: `The return window is over; the tenant can claim the full deposit`,
+    [PROOF_OF_RENT_ERROR__REVIEW_WINDOW_CLOSED]: `The 7-day review window is over`,
     [PROOF_OF_RENT_ERROR__SETTLEMENT_MISMATCH]: `Settlement offer changed`,
     [PROOF_OF_RENT_ERROR__UNAUTHORIZED]: `Signer is not allowed to do this`,
     [PROOF_OF_RENT_ERROR__WRONG_TOKEN_ACCOUNT]: `Wrong token account`,

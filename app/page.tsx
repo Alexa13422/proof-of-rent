@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Logo } from "./components/brand/logo";
-import { Guilloche } from "./components/guilloche";
+import { SealRosette } from "./components/seal-rosette";
 import { PassportCard } from "./components/passport-card";
 import { ThemeToggle } from "./components/theme-toggle";
 import { AccountButton } from "./components/account-button";
@@ -49,7 +49,7 @@ export default function Home() {
 
       <main>
         <section className="relative overflow-hidden">
-          <Guilloche className="pointer-events-none absolute inset-x-0 top-1/2 h-[480px] w-full -translate-y-1/2 text-primary opacity-35" />
+          <SealRosette className="pointer-events-none absolute left-1/2 top-1/2 size-[760px] -translate-x-1/2 -translate-y-1/2 text-primary opacity-25 md:left-[calc(50%+17rem)] md:size-[900px]" />
           <div className="relative mx-auto grid max-w-6xl gap-12 px-4 pb-20 pt-12 sm:px-6 md:grid-cols-[0.9fr_1.1fr] md:items-center md:pb-28 md:pt-20">
             <div className="max-w-xl">
               <div className="mb-7 inline-flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted">
