@@ -23,16 +23,16 @@ export function LandlordHistory({ record }: { record: LandlordRecord }) {
         <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
           As a landlord
         </p>
-        <h2 id="landlord-history-title" className="mt-2 text-2xl font-medium">
+        <h2 id="landlord-history-title" className="mt-2 text-3xl font-medium">
           Landlord record
         </h2>
       </div>
 
       <dl className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3">
         {facts.map(([label, value]) => (
-          <div key={label} className="border-b border-r border-border px-4 py-4 sm:px-5">
-            <dt className="text-xs text-muted">{label}</dt>
-            <dd className="mt-2 font-mono text-xl font-semibold tabular-nums">{value}</dd>
+          <div key={label} className="border-b border-r border-border px-4 py-5 sm:px-6">
+            <dt className="text-sm text-muted">{label}</dt>
+            <dd className="mt-2 font-mono text-2xl font-semibold tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>
@@ -49,12 +49,10 @@ export function LandlordHistory({ record }: { record: LandlordRecord }) {
                 <p className="mt-1 text-sm text-muted">{l.period}</p>
               </div>
               <div className="text-sm sm:text-right">
-                <p className="font-semibold uppercase tracking-[0.06em] text-xs">
+                <p className="text-xs font-semibold uppercase tracking-[0.06em]">
                   {OUTCOME_LABEL[l.outcome]}
                 </p>
-                <p className="mt-1 font-mono tabular-nums">
-                  {l.returned} <span className="text-muted">of {l.deposit}</span>
-                </p>
+                <p className="mt-1 font-mono tabular-nums">{l.depositReturn}</p>
               </div>
             </li>
           ))}

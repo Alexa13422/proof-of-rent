@@ -28,7 +28,7 @@ import {
   getResolveDisputeInstructionAsync,
   getSubmitEvidenceInstruction,
 } from "@/app/generated/proof_of_rent";
-import { AuthError, getUserSigner, resolveUserWallet } from "@/app/lib/server/privy";
+import { AuthError, getMaskedEmailByWallet, getUserSigner, resolveUserWallet } from "@/app/lib/server/privy";
 import { getFeePayerSigner } from "@/app/lib/server/fee-payer";
 import { SimulationError, programErrorFromLogs, rpc, sendWithFeePayer } from "@/app/lib/server/solana";
 import {
@@ -171,6 +171,7 @@ async function buildInstructions(
       }
       const startTs = unixSeconds(str(body, "startDate"));
       const endTs = unixSeconds(str(body, "endDate"));
+      const depositAmount = parseAmount(str(body, "deposit"));
       const now = BigInt(Math.floor(Date.now() / 1000));
       const offerId = BigInt(Date.now());
       const ix = await getCreateOfferInstructionAsync({
@@ -179,8 +180,8 @@ async function buildInstructions(
         mint: DEPOSIT_MINT!,
         offerId,
         tenant,
-        depositAmount: parseAmount(str(body, "deposit")),
-        monthlyRent: parseAmount(str(body, "rent")),
+        depositAmount,
+        monthlyRent: 0n,
         startTs,
         endTs,
         acceptDeadline: now + OFFER_VALID_FOR,
@@ -371,6 +372,29 @@ async function buildInstructions(
   }
 }
 
+/**
+ * Demo notifications: nothing is sent. Returns the other party's masked email
+ * so the UI can show "we notified an•••@gmail.com".
+ */
+async function counterpartyEmail(
+  action: string,
+  body: Body,
+  me: Address
+): Promise<string | undefined> {
+  try {
+    let other: string | undefined;
+    if (action === "create_offer") other = str(body, "tenant");
+    else if (typeof body.lease === "string") {
+      const lease = await getLease(addr(body, "lease"));
+      if (lease) other = lease.landlord === me ? lease.tenant : lease.landlord;
+    }
+    if (!other) return undefined;
+    return (await getMaskedEmailByWallet(other)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ action: string }> }
@@ -406,7 +430,8 @@ export async function POST(
         console.error(`tx/${action} follow-up failed`, e);
       }
     }
-    return NextResponse.json({ signature, ...result });
+    const notified = await counterpartyEmail(action, body, user.address);
+    return NextResponse.json({ signature, ...result, notified });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: 401 });

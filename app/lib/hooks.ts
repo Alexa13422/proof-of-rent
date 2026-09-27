@@ -11,6 +11,7 @@ import {
   type Passport,
 } from "./chain";
 import { callApi } from "./auth/use-account";
+import { notifyCounterparty } from "./notify";
 
 export function usePassport(owner: string | null) {
   return useSWR<Passport | null>(owner ? ["passport", owner] : null, () =>
@@ -47,11 +48,13 @@ export function useBalance(owner: string | null) {
   );
 }
 
-export type TxResult = { signature: string; lease?: string };
+export type TxResult = { signature: string; lease?: string; notified?: string };
 
 export async function sendAction(action: string, body?: Record<string, unknown>) {
   const result = await callApi<TxResult>(`/api/tx/${action}`, body);
   // Deposits, refunds and the starter mint all move tokens.
   void mutate((key) => Array.isArray(key) && key[0] === "balance");
+  // Queue after the caller's own success toast.
+  setTimeout(() => notifyCounterparty(action, result.notified), 400);
   return result;
 }

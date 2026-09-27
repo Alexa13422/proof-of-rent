@@ -5,7 +5,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { AccountButton } from "./account-button";
 
 export function SiteHeader({
-  width = "max-w-4xl",
+  width = "max-w-5xl",
   extra,
 }: {
   width?: string;

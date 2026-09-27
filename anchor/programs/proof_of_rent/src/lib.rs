@@ -300,9 +300,9 @@ pub mod proof_of_rent {
     }
 
     /// Tenant marks calendar month `period` (YYYYMM, UTC) as paid on
-    /// `paid_at`. Rent for a month is due by its last day. The month the
-    /// lease starts in is paid at signing, so the first period is the next
-    /// one. Opens 10 days before the month ends; late claims are allowed.
+    /// `paid_at`. Rent for a month is due by its last day. The lease's
+    /// signing month is included and opens 10 days before the month ends;
+    /// late claims are allowed.
     pub fn claim_rent(ctx: Context<ClaimRent>, period: u32, paid_at: i64) -> Result<()> {
         let lease = &ctx.accounts.lease;
         let rent = &mut ctx.accounts.rent_payment;
@@ -454,10 +454,11 @@ fn submit_rent_claim(lease: &Lease, rent: &mut RentPayment, paid_at: i64) -> Res
         PorError::InvalidStatus
     );
     let (start, end) = period_bounds(rent.period)?;
-    // First period is the month after the one the lease starts in.
-    require!(start > lease.start_ts && start < lease.end_ts, PorError::InvalidPeriod);
+    // Any calendar month overlapping the lease is claimable, including the
+    // signing month (accepting an offer only funds deposit + platform fee).
+    require!(end > lease.start_ts && start < lease.end_ts, PorError::InvalidPeriod);
     require!(now >= end - RENT_CLAIM_OPENS, PorError::RentClaimNotOpen);
-    require!(paid_at >= start && paid_at <= now, PorError::InvalidTimeParams);
+    require!(paid_at >= start.max(lease.start_ts) && paid_at <= now, PorError::InvalidTimeParams);
     rent.status = RentStatus::Claimed;
     rent.paid_at = paid_at;
     rent.claimed_at = now;
@@ -599,7 +600,8 @@ fn pay_out<'info>(
 
     let now = Clock::get()?.unix_timestamp;
     let full = award >= lease.deposit_amount;
-    let months = (lease.end_ts.saturating_sub(lease.start_ts) / SECONDS_PER_MONTH).max(0);
+    let effective_end = now.min(lease.end_ts);
+    let months = (effective_end.saturating_sub(lease.start_ts) / SECONDS_PER_MONTH).max(0);
     let months = u32::try_from(months).map_err(|_| PorError::MathOverflow)?;
 
     lease.status = LeaseStatus::Closed;

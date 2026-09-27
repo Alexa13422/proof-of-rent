@@ -25,7 +25,6 @@ export function NewOfferForm() {
   const [form, setForm] = useState({
     tenant: "",
     area: "",
-    rent: "",
     deposit: "",
     startDate: isoDate(1),
     endDate: isoDate(366),
@@ -95,28 +94,19 @@ export function NewOfferForm() {
         />
       </Field>
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        <Field label={`Monthly rent (${TOKEN_SYMBOL})`} hint="Paid by bank transfer, shown for reference.">
-          <input
-            required
-            inputMode="decimal"
-            className={`${inputClass} font-mono tabular-nums`}
-            value={form.rent}
-            onChange={set("rent")}
-            placeholder="3200"
-          />
-        </Field>
-        <Field label={`Deposit (${TOKEN_SYMBOL})`} hint="Held in escrow until the lease ends.">
-          <input
-            required
-            inputMode="decimal"
-            className={`${inputClass} font-mono tabular-nums`}
-            value={form.deposit}
-            onChange={set("deposit")}
-            placeholder="6400"
-          />
-        </Field>
-      </div>
+      <Field
+        label={`Deposit (${TOKEN_SYMBOL})`}
+        hint="Held in escrow until the lease ends."
+      >
+        <input
+          required
+          inputMode="decimal"
+          className={`${inputClass} font-mono tabular-nums`}
+          value={form.deposit}
+          onChange={set("deposit")}
+          placeholder="6400"
+        />
+      </Field>
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Field label="Start date">
@@ -159,8 +149,9 @@ export function NewOfferForm() {
 
       <p className="rounded-lg border border-border bg-cream/50 px-4 py-3 text-sm leading-6 text-muted">
         The tenant has 7 days to accept. When they accept, they pay the deposit
-        into escrow plus a 1% platform fee. If they want different terms, they
-        reject the offer and you send a new one.
+        by BLIK straight into escrow, plus a 1% platform fee. If they want
+        different terms, they reject the offer and you send a new one. What the
+        escrow pays you at the end you withdraw for free.
       </p>
 
       <button type="submit" className={primaryButton} disabled={!!busy || tenantInvalid}>

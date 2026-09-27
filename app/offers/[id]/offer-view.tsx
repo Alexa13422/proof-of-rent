@@ -24,6 +24,9 @@ import {
 import { hashOrNull, uploadEvidence } from "../../lib/evidence";
 import { EvidenceInput, EvidenceView } from "../../components/evidence";
 import { RentMonths } from "../../components/rent-months";
+import { BlikCheckout } from "../../components/blik-checkout";
+import { DemoBadge, Receipt } from "../../components/payout-panel";
+import { landlordPayout, refundRoute, tenantRefund, REFUND_WINDOW_MONTHS } from "../../lib/payments";
 import {
   dangerButton,
   eyebrow,
@@ -100,6 +103,8 @@ export function OfferView({ id }: { id: string }) {
         </div>
       )}
 
+      {role && lease.status === LeaseStatus.Closed && <MoneyOut lease={lease} role={role} />}
+
       <RentMonths lease={lease} role={role} />
 
       {checkin && <EvidenceView hash={checkin} title="Move-in condition" />}
@@ -111,7 +116,6 @@ function Terms({ lease }: { lease: LeaseRecord }) {
   const total = lease.depositAmount + lease.feeAmount;
   const rows: [string, React.ReactNode][] = [
     ["Period", `${formatDate(lease.startTs)} – ${formatDate(lease.endTs)}`],
-    ["Monthly rent", <Mono key="r">{formatAmount(lease.monthlyRent)}</Mono>],
     ["Deposit (escrow)", <Mono key="d">{formatAmount(lease.depositAmount)}</Mono>],
     ["Platform fee", <Mono key="f">{formatAmount(lease.feeAmount)}</Mono>],
     ["Tenant pays on accept", <Mono key="t">{formatAmount(total)}</Mono>],
@@ -148,6 +152,7 @@ function Actions({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const [settle, setSettle] = useState("");
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
@@ -188,28 +193,38 @@ function Actions({
   if (lease.status === LeaseStatus.Offered) {
     if (role === "tenant") {
       const expired = now > lease.acceptDeadline;
+      const total = formatAmount(lease.depositAmount + lease.feeAmount);
       return wrap(
-        <>
-          <button
-            className={primaryButton}
-            disabled={!!busy || expired}
-            onClick={() => run("accept_offer", {}, "Offer accepted, deposit in escrow")}
-          >
-            {busy === "accept_offer"
-              ? "Paying…"
-              : `Accept and pay ${formatAmount(lease.depositAmount + lease.feeAmount)}`}
-          </button>
-          <button
-            className={dangerButton}
-            disabled={!!busy}
-            onClick={() => run("reject_offer", {}, "Offer rejected")}
-          >
-            Reject
-          </button>
-        </>,
+        paying ? (
+          <BlikCheckout
+            amountLabel={total}
+            purpose={`Deposit ${formatAmount(lease.depositAmount)} goes straight into this lease's escrow, plus the ${formatAmount(lease.feeAmount)} platform fee. Nothing sits on a Proof of Rent balance.`}
+            cta={`Pay ${total}`}
+            disabled={expired}
+            onPaid={() => run("accept_offer", {}, "Paid. Deposit is in escrow")}
+            onCancel={() => setPaying(false)}
+          />
+        ) : (
+          <>
+            <button
+              className={primaryButton}
+              disabled={!!busy || expired}
+              onClick={() => setPaying(true)}
+            >
+              Accept and pay {total} with BLIK
+            </button>
+            <button
+              className={dangerButton}
+              disabled={!!busy}
+              onClick={() => run("reject_offer", {}, "Offer rejected")}
+            >
+              Reject
+            </button>
+          </>
+        ),
         expired
           ? "This offer has expired. Ask the landlord for a new one."
-          : "Accepting locks the deposit in escrow: neither side can take it alone. Want different terms? Reject it and the landlord can send a new offer."
+          : "Accepting locks the deposit in escrow: neither side can take it alone. Whatever comes back to you at the end is refunded to the account you pay from. Want different terms? Reject it and the landlord can send a new offer."
       );
     }
     return wrap(
@@ -388,16 +403,26 @@ function Actions({
           placeholder="Why is the proposal unfair? Add photos of the flat at move-out."
           required
         />
-        <button
-          className={dangerButton}
-          disabled={!!busy || !text.trim()}
-          onClick={async () => {
-            const evidence = await upload("dispute");
-            if (evidence) void run("open_dispute", { evidence }, "Dispute opened");
-          }}
-        >
-          {busy === "upload" ? "Uploading…" : `Dispute (bond ${formatAmount(bond)})`}
-        </button>
+        {paying ? (
+          <BlikCheckout
+            amountLabel={formatAmount(bond)}
+            purpose="The bond goes into this lease's escrow next to the deposit. If you win, it is refunded with your deposit."
+            cta={`Pay bond and open dispute`}
+            onPaid={async () => {
+              const evidence = await upload("dispute");
+              if (evidence) await run("open_dispute", { evidence }, "Dispute opened");
+            }}
+            onCancel={() => setPaying(false)}
+          />
+        ) : (
+          <button
+            className={dangerButton}
+            disabled={!!busy || !text.trim()}
+            onClick={() => setPaying(true)}
+          >
+            Dispute (bond {formatAmount(bond)} by BLIK)
+          </button>
+        )}
       </div>
     </section>
   );
@@ -521,6 +546,65 @@ function Resolve({ lease, onDone }: { lease: LeaseRecord; onDone: () => void }) 
       >
         {busy ? "Resolving…" : "Resolve dispute"}
       </button>
+    </section>
+  );
+}
+
+/** Where escrowed money went when the lease closed, and how it reaches a bank. */
+function MoneyOut({ lease, role }: { lease: LeaseRecord; role: "landlord" | "tenant" }) {
+  const [sent, setSent] = useState(false);
+  const amount = role === "tenant" ? tenantRefund(lease) : landlordPayout(lease);
+  if (amount === 0n) return null;
+
+  if (role === "landlord") {
+    return (
+      <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+        <div>
+          <p className={eyebrow}>Paid to you</p>
+          <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatAmount(amount)}</p>
+          <p className="mt-1 text-sm text-muted">Withdraw it to BLIK or your bank, free of charge.</p>
+        </div>
+        <Link href="/dashboard#payouts" className={secondaryButton}>
+          Go to payouts
+        </Link>
+      </section>
+    );
+  }
+
+  const route = refundRoute(lease, lease.closedAt);
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-card p-5 sm:p-7">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={eyebrow}>Returned to you</p>
+          <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatAmount(amount)}</p>
+        </div>
+        <DemoBadge />
+      </div>
+      {route.kind === "blik" ? (
+        sent ? (
+          <Receipt
+            text={`${formatAmount(amount)} would be refunded to the bank account you paid the deposit from with BLIK, usually within a few hours. Fee: 0 PLN.`}
+          />
+        ) : (
+          <>
+            <p className="text-sm leading-6 text-muted">
+              Refunded to the bank account you paid from with BLIK, as a refund of the
+              original payment: no bank details, no fee. BLIK payments can be refunded
+              for {REFUND_WINDOW_MONTHS} months; yours until {formatDate(route.until)}.
+            </p>
+            <button className={primaryButton} onClick={() => setSent(true)}>
+              Refund {formatAmount(amount)} to my BLIK account
+            </button>
+          </>
+        )
+      ) : (
+        <p className="text-sm leading-6 text-muted">
+          The original BLIK payment ({formatDate(route.paidAt)}) is older than{" "}
+          {REFUND_WINDOW_MONTHS} months and can no longer be refunded. We send the money
+          by bank transfer instead; the transfer cost is deducted from the amount.
+        </p>
+      )}
     </section>
   );
 }

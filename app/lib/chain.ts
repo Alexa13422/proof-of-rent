@@ -179,12 +179,11 @@ export function periodLabel(period: number): string {
   });
 }
 
-/** Months rent is due for: every calendar month after the signing month
- *  that starts before the lease ends. */
+/** Calendar months that overlap the lease, including the signing month. */
 export function leasePeriods(lease: Lease): number[] {
   const start = new Date(Number(lease.startTs) * 1000);
   let y = start.getUTCFullYear();
-  let m = start.getUTCMonth() + 2; // next month, 1-based
+  let m = start.getUTCMonth() + 1; // 1-based
   const out: number[] = [];
   for (;;) {
     if (m > 12) {
@@ -198,6 +197,14 @@ export function leasePeriods(lease: Lease): number[] {
     m += 1;
   }
   return out;
+}
+
+export function rentClaimAvailability(period: number, now: bigint, leaseStart?: bigint) {
+  let opensAt = periodBounds(period)[1] - RENT_CLAIM_OPENS;
+  // A claim's payment date must be within the lease. If the lease begins after
+  // the normal 10-day opening, wait until its actual start instead.
+  if (leaseStart !== undefined && leaseStart > opensAt) opensAt = leaseStart;
+  return { open: now >= opensAt, opensAt };
 }
 
 /** Claimed and the landlord let the review window pass. */

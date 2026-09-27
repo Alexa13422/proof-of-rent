@@ -6,16 +6,15 @@ import { toast } from "sonner";
 import { address as toAddress } from "@solana/kit";
 import {
   LeaseStatus,
-  RENT_CLAIM_OPENS,
   RENT_REVIEW_WINDOW,
   RentStatus,
-  formatAmount,
   formatDate,
   getRentForLease,
   leasePeriods,
   periodBounds,
   periodLabel,
   rentAutoAccepted,
+  rentClaimAvailability,
   rentOnTime,
   type LeaseRecord,
   type RentRecord,
@@ -41,18 +40,19 @@ export function RentMonths({
   if (!live && lease.status !== LeaseStatus.Closed) return null;
 
   const byPeriod = new Map((records ?? []).map((r) => [r.period, r]));
-  // Months already open for claiming, or already recorded.
-  const periods = leasePeriods(lease).filter(
-    (p) => byPeriod.has(p) || periodBounds(p)[1] - RENT_CLAIM_OPENS <= now
-  );
+  const allPeriods = leasePeriods(lease);
+  // Show the current/signing month even before its claim window opens. Future
+  // months stay hidden until they open, keeping the log focused.
+  const periods = allPeriods.filter((p, index) => {
+    const [start] = periodBounds(p);
+    return byPeriod.has(p) || rentClaimAvailability(p, now, lease.startTs).open || (index === 0 && start <= now);
+  });
 
   return (
     <section className="space-y-4">
       <div>
         <p className={eyebrow}>Rent log</p>
-        <h2 className="mt-2 text-xl font-medium">
-          Monthly rent · {formatAmount(lease.monthlyRent)}
-        </h2>
+        <h2 className="mt-2 text-xl font-medium">Monthly payment record</h2>
         <p className="mt-1 text-sm leading-6 text-muted">
           Rent for a month is due by its last day. The tenant marks it paid (from 10
           days before the month ends); the landlord confirms or rejects within 7
@@ -99,7 +99,10 @@ function Month({
   now: bigint;
   onDone: () => void;
 }) {
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(() => {
+    const startDate = new Date(Number(lease.startTs) * 1000).toISOString().slice(0, 10);
+    return startDate > today() ? startDate : today();
+  });
   const [busy, setBusy] = useState<string | null>(null);
 
   async function run(action: string, body: Record<string, unknown>, ok: string) {
@@ -116,8 +119,10 @@ function Month({
   }
 
   const status = monthStatus(record, now);
+  const availability = rentClaimAvailability(period, now, lease.startTs);
   const reviewOpen = record?.status === RentStatus.Claimed && !status.auto;
-  const canClaim = role === "tenant" && (!record || record.status === RentStatus.Rejected);
+  const canClaim =
+    availability.open && role === "tenant" && (!record || record.status === RentStatus.Rejected);
   const canReview = role === "landlord" && reviewOpen;
 
   return (
@@ -138,12 +143,22 @@ function Month({
         </p>
       )}
 
+      {!record && !availability.open && (
+        <p className="text-sm text-muted">
+          Payment confirmation opens {formatDate(availability.opensAt)}
+          {availability.opensAt === lease.startTs
+            ? " when the lease starts."
+            : " — 10 days before the month ends."}
+        </p>
+      )}
+
       {canClaim && (
         <div className="flex flex-wrap items-center gap-3">
           <input
             type="date"
             className={`${inputClass} w-44`}
             value={date}
+            min={new Date(Number(lease.startTs) * 1000).toISOString().slice(0, 10)}
             max={today()}
             onChange={(e) => setDate(e.target.value)}
             aria-label="Payment date"

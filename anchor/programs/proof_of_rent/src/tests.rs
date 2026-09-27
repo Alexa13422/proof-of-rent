@@ -431,6 +431,7 @@ fn accept_with_wrong_treasury_fails() {
 fn release_full_updates_passports() {
     let (mut fx, lease) = Fx::active();
     let l = fx.landlord.insecure_clone();
+    fx.at(T0 + 3 * MONTH);
     fx.close_out(&l, lease, instruction::ReleaseFull {}.data()).unwrap();
     let state = fx.lease(&lease);
     assert_eq!(state.status, LeaseStatus::Closed);
@@ -441,6 +442,17 @@ fn release_full_updates_passports() {
     assert_eq!((tp.leases_completed, tp.returned_in_full, tp.months_on_record), (1, 1, 3));
     let lp = fx.passport(&l.pubkey());
     assert_eq!((lp.landlord_leases_closed, lp.landlord_full_returns), (1, 1));
+}
+
+#[test]
+fn early_termination_records_only_elapsed_months() {
+    let (mut fx, lease) = Fx::active();
+    let l = fx.landlord.insecure_clone();
+    // Closed after only 1 day: months_on_record must be 0, not 3.
+    fx.at(T0 + DAY);
+    fx.close_out(&l, lease, instruction::ReleaseFull {}.data()).unwrap();
+    let tp = fx.passport(&fx.tenant.pubkey());
+    assert_eq!((tp.leases_completed, tp.returned_in_full, tp.months_on_record), (1, 1, 0));
 }
 
 #[test]
@@ -850,7 +862,7 @@ fn rent_claim_window_and_periods() {
     fx.at(JAN_START - 11 * DAY);
     assert!(fx.claim_rent(&t, lease, DEC_2023, DEC_START + DAY).is_err(), "not open yet");
     fx.at(JAN_START - 10 * DAY);
-    assert!(fx.claim_rent(&t, lease, 202311, DEC_START - DAY).is_err(), "signing month is not claimable");
+    fx.claim_rent(&t, lease, 202311, DEC_START - DAY).unwrap();
     assert!(fx.claim_rent(&t, lease, 202403, DEC_START).is_err(), "after the lease");
     assert!(fx.claim_rent(&l, lease, DEC_2023, DEC_START + DAY).is_err(), "landlord cannot claim");
     assert!(fx.claim_rent(&t, lease, DEC_2023, JAN_START).is_err(), "paid_at in the future");
@@ -858,6 +870,15 @@ fn rent_claim_window_and_periods() {
     assert!(fx.claim_rent(&t, lease, DEC_2023, DEC_START + 5 * DAY).is_err(), "once per month");
     let r = fx.rent(&lease, DEC_2023);
     assert_eq!((r.status, r.paid_at, r.tenant, r.landlord), (RentStatus::Claimed, DEC_START + 5 * DAY, t.pubkey(), l.pubkey()));
+}
+
+#[test]
+fn signing_month_rent_opens_ten_days_before_month_end() {
+    let (mut fx, lease) = Fx::active();
+    let tenant = fx.tenant.insecure_clone();
+    fx.at(DEC_START - 10 * DAY);
+    fx.claim_rent(&tenant, lease, 202311, T0 + DAY).unwrap();
+    assert_eq!(fx.rent(&lease, 202311).period, 202311);
 }
 
 #[test]

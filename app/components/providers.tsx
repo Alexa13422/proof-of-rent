@@ -1,6 +1,6 @@
 "use client";
 
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider, useTheme } from "next-themes";
 import { Toaster } from "sonner";
 import { PropsWithChildren } from "react";
 import { AuthProvider } from "../lib/auth/provider";
@@ -15,8 +15,19 @@ export function Providers({ children }: PropsWithChildren) {
     >
       <AuthProvider>
         {children}
-        <Toaster position="bottom-right" richColors />
+        <ThemedToaster />
       </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+function ThemedToaster() {
+  const { resolvedTheme } = useTheme();
+  return (
+    <Toaster
+      position="bottom-right"
+      richColors
+      theme={resolvedTheme === "light" ? "light" : "dark"}
+    />
   );
 }

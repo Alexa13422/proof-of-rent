@@ -20,6 +20,7 @@ import {
   secondaryButton,
 } from "../components/site-header";
 import { CopyButton } from "../components/copy-button";
+import { PayoutPanel } from "../components/payout-panel";
 
 export function Dashboard() {
   const account = useAccount();
@@ -131,6 +132,10 @@ export function Dashboard() {
         </div>
       </section>
 
+      {outgoing.length > 0 && (
+        <PayoutPanel address={account.address} asLandlord={outgoing} />
+      )}
+
       <LeaseList
         title="Offers to you"
         hint="As a tenant"
@@ -188,7 +193,7 @@ function LeaseList({
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <p className={eyebrow}>{hint}</p>
-          <h2 className="mt-2 text-2xl font-medium">{title}</h2>
+          <h2 className="mt-2 text-3xl font-medium">{title}</h2>
         </div>
         {action}
       </div>
@@ -207,13 +212,20 @@ function LeaseList({
             >
               <Link
                 href={`/offers/${lease.address}`}
-                className="grid gap-2 px-5 py-4 hover:bg-cream/50 sm:grid-cols-[1fr_auto] sm:items-center sm:px-7"
+                className="grid gap-2 px-5 py-5 transition-colors hover:bg-cream/50 sm:grid-cols-[1fr_auto] sm:items-center sm:px-8"
               >
                 <div className="min-w-0">
-                  <p className="font-medium">{lease.area}</p>
+                  <p className="text-lg font-medium">{lease.area}</p>
                   <p className="mt-1 text-sm text-muted">
-                    {formatDate(lease.startTs)} – {formatDate(lease.endTs)} ·{" "}
-                    {counterparty}{" "}
+                    {formatDate(lease.startTs)} –{" "}
+                    {formatDate(
+                      lease.status === LeaseStatus.Closed &&
+                        lease.closedAt > 0n &&
+                        lease.closedAt < lease.endTs
+                        ? lease.closedAt
+                        : lease.endTs
+                    )}{" "}
+                    · {counterparty}{" "}
                     <span className="font-mono">
                       {shortAddress(lease[counterparty])}
                     </span>
@@ -221,7 +233,7 @@ function LeaseList({
                 </div>
                 <div className="sm:text-right">
                   <StatusBadge lease={lease} />
-                  <p className="mt-1 font-mono text-sm tabular-nums">
+                  <p className="mt-2 font-mono font-semibold tabular-nums">
                     {formatAmount(lease.depositAmount)}
                   </p>
                 </div>

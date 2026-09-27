@@ -56,16 +56,16 @@ export default async function PassportPage({ params }: PassportPageProps) {
     <div className="min-h-dvh bg-background text-foreground">
       <SiteHeader extra={<SharePassportButton />} />
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         <div className="mb-7 flex flex-col gap-3 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-sm border border-border px-3 py-1.5 text-xs font-medium">
               <span className="size-1.5 rounded-full bg-primary" />
               Public record
             </div>
-            <h1 className="text-3xl font-medium sm:text-4xl">Rent passport</h1>
+            <h1 className="text-4xl font-medium sm:text-5xl">Rent passport</h1>
           </div>
-          <p className="max-w-xs text-sm leading-6 text-muted sm:text-right">
+          <p className="max-w-sm text-sm leading-6 text-muted sm:text-right">
             How this person’s leases ended, how rent was paid and, if they
             rent out, how they treated tenants. No private details are shown.
           </p>
@@ -114,7 +114,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
         </aside>
       </main>
 
-      <footer className="mx-auto flex max-w-4xl items-center justify-between gap-4 border-t border-border px-4 py-7 text-xs text-muted sm:px-6">
+      <footer className="mx-auto flex max-w-5xl items-center justify-between gap-4 border-t border-border px-4 py-7 text-xs text-muted sm:px-6">
         <span>Proof of Rent</span>
         <span className="font-mono">Record ID: {passport.id}</span>
       </footer>

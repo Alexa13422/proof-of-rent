@@ -5,19 +5,35 @@ export type PaymentTiming = "on-time" | "late";
 export type RentPayment = {
   month: string;
   paidAt: string;
-  amount: string;
   timing: PaymentTiming;
   confirmation: PaymentConfirmation;
 };
+
+export type DepositReturnBand =
+  | "100% returned"
+  | "75–99% returned"
+  | "50–74% returned"
+  | "1–49% returned"
+  | "0% returned"
+  | "Not available";
+
+/** Public passports expose only a broad deposit-return band, never amounts. */
+export function depositReturnBand(returned: bigint, deposit: bigint): DepositReturnBand {
+  if (deposit <= 0n) return "Not available";
+  if (returned >= deposit) return "100% returned";
+  if (returned <= 0n) return "0% returned";
+  const basisPoints = (returned * 10_000n) / deposit;
+  if (basisPoints >= 7_500n) return "75–99% returned";
+  if (basisPoints >= 5_000n) return "50–74% returned";
+  return "1–49% returned";
+}
 
 export type Lease = {
   id: string;
   area: string;
   period: string;
   months: number;
-  rent: string;
-  deposit: string;
-  returned: string;
+  depositReturn: DepositReturnBand;
   outcome: DepositOutcome;
   outcomeNote?: string;
   landlordLeases: number;
@@ -28,8 +44,7 @@ export type LandlordLease = {
   id: string;
   area: string;
   period: string;
-  deposit: string;
-  returned: string;
+  depositReturn: DepositReturnBand;
   outcome: DepositOutcome;
 };
 
@@ -59,7 +74,7 @@ export type RentPassport = {
 
 const demoPassport: RentPassport = {
   id: "demo",
-  tenantLabel: "Demo tenant",
+  tenantLabel: "de••••••@gmail.com",
   tenantReference: "7xKp…2mQa",
   verifiedSince: "October 2023",
   leases: [
@@ -68,51 +83,43 @@ const demoPassport: RentPassport = {
       area: "Warsaw · Mokotów",
       period: "Mar 2025 – Feb 2026",
       months: 12,
-      rent: "3 200 PLN",
-      deposit: "6 400 PLN",
-      returned: "6 400 PLN",
+      depositReturn: "100% returned",
       outcome: "returned-in-full",
       landlordLeases: 3,
       payments: [
         {
           month: "February 2026",
           paidAt: "02 Feb 2026",
-          amount: "3 200 PLN",
           timing: "on-time",
           confirmation: "landlord-confirmed",
         },
         {
           month: "January 2026",
           paidAt: "03 Jan 2026",
-          amount: "3 200 PLN",
           timing: "on-time",
           confirmation: "landlord-confirmed",
         },
         {
           month: "December 2025",
           paidAt: "01 Dec 2025",
-          amount: "3 200 PLN",
           timing: "on-time",
           confirmation: "no-objection",
         },
         {
           month: "November 2025",
           paidAt: "12 Nov 2025",
-          amount: "3 200 PLN",
           timing: "late",
           confirmation: "landlord-confirmed",
         },
         {
           month: "October 2025",
           paidAt: "02 Oct 2025",
-          amount: "3 200 PLN",
           timing: "on-time",
           confirmation: "no-objection",
         },
         {
           month: "September 2025",
           paidAt: "03 Sep 2025",
-          amount: "3 200 PLN",
           timing: "on-time",
           confirmation: "no-objection",
         },
@@ -123,12 +130,9 @@ const demoPassport: RentPassport = {
       area: "Kraków · Podgórze",
       period: "Oct 2023 – Jan 2025",
       months: 16,
-      rent: "2 400 PLN",
-      deposit: "4 800 PLN",
-      returned: "4 200 PLN",
+      depositReturn: "75–99% returned",
       outcome: "partly-returned",
-      outcomeNote:
-        "600 PLN kept for a damaged countertop, agreed by both sides.",
+      outcomeNote: "Part of the deposit was kept for damage, agreed by both sides.",
       landlordLeases: 1,
       payments: [],
     },

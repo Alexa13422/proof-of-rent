@@ -113,8 +113,8 @@ wsl -d Ubuntu -- bash -lc "cd /mnt/c/Programming/SOL/proof-of-rent && NO_DNA=1 n
 
 Дизайн-система: https://claude.ai/artifact/VrvNo24iSfEaY6tozJ8on2 (токени, правила, компоненти). Коротко:
 - Холодний білий (`background` #F6F6F3, `card` білий), чорнило (`foreground`), єдиний бренд-колір — `primary`,
-  сигнальний помаранчевий #FF4A1C: заливки, рамки, лого, штамп «Verified record» (текст на ньому — `primary-foreground`,
-  чорний). Дрібний акцентний текст — лише `text-primary-ink` (#C2330C), бо чистий помаранчевий на білому має 3:1.
+  сигнальний помаранчевий #FF4A1C: заливки, рамки, лого. Штамп «Verified record» — `<Stamp>` (`app/components/stamp.tsx`): лише контур
+  `text-primary-ink`, подвійна рамка, нахил, «зношене» чорнило; ніколи не суцільна заливка, щоб не читався як кнопка. Дрібний акцентний текст — лише `text-primary-ink` (#C2330C), бо чистий помаранчевий на білому має 3:1.
   `caution` і `destructive` — лише для результатів/спорів і завжди зі словом поруч. Жодних сирих кольорів
   Tailwind (`emerald-*`, `blue-*`…) — тільки токени з `app/globals.css`.
 - Фон не суцільний: паспортний гільйош-візерунок `<Guilloche>` (`app/components/guilloche.tsx`) тонкими лініями
@@ -123,6 +123,8 @@ wsl -d Ubuntu -- bash -lc "cd /mnt/c/Programming/SOL/proof-of-rent && NO_DNA=1 n
   ніколи під дрібним текстом без суцільної підкладки.
 - Паспорт = результат кауції насамперед (`LeaseHistory`, штампи «Returned in full / Partly returned / Arbiter ruled»),
   оплати — другорядно (`PaymentTimeline`: «Landlord confirmed» / «No objection»). Суми польським форматом: «3 200 PLN».
+- Шкала тексту на крок більша за дефолт Tailwind (`--text-xs` 13px … `--text-xl` 22px у `globals.css`); без
+  `text-[11px]`. Сторінки — `max-w-5xl`. На картці паспорта головний факт — «Deposit back in full» (акцентна клітинка).
 - Шрифти: `h1`/`h2` — Newsreader (serif, weight 500), інтерфейс — IBM Plex Sans, суми/дати/адреси — IBM Plex Mono
   з `tabular-nums`.
 - Межі замість тіней; радіуси лише `rounded-sm` (2px, штампи/бейджі), `rounded-md` (4px, контроли),

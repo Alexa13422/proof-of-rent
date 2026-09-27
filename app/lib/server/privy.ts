@@ -74,6 +74,29 @@ export async function resolveUserWallet(
   };
 }
 
+/** "andrii.k@gmail.com" → "an•••••@gmail.com". Never expose the full address. */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return "•••";
+  const keep = local.length > 3 ? 2 : 1;
+  return `${local.slice(0, keep)}${"•".repeat(Math.max(3, local.length - keep))}@${domain}`;
+}
+
+/**
+ * Masked login email of the passport owner, looked up in Privy by wallet.
+ * Not stored on-chain (public and permanent), so it also works for passports
+ * created before this existed. Null if Privy is unavailable or has no email.
+ */
+export async function getMaskedEmailByWallet(wallet: string): Promise<string | null> {
+  try {
+    const user = await getPrivyClient().getUserByWalletAddress(wallet);
+    const email = user?.google?.email ?? user?.email?.address;
+    return email ? maskEmail(email) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getUserSigner(
   wallet: UserWallet
 ): Promise<TransactionSigner> {
