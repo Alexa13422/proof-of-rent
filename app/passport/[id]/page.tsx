@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { address } from "@solana/kit";
 import { LandlordHistory } from "@/app/components/landlord-history";
 import { LeaseHistory } from "@/app/components/lease-history";
@@ -15,11 +16,12 @@ import { getChainPassport } from "@/app/lib/passport";
 // On-chain data changes; never serve a stale passport.
 export const dynamic = "force-dynamic";
 
-async function loadPassport(id: string) {
+// cache(): metadata and page share one load per request (half the RPC calls).
+const loadPassport = cache(async (id: string) => {
   if (id === "demo") return getMockPassport(id);
   if (!isValidAddress(id)) return null;
   return getChainPassport(id);
-}
+});
 
 type PassportPageProps = {
   params: Promise<{ id: string }>;

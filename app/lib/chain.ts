@@ -39,8 +39,8 @@ const retryingTransport: typeof httpTransport = async (request) => {
       return await httpTransport(request);
     } catch (error) {
       const status = (error as { context?: { statusCode?: number } }).context?.statusCode;
-      if (status !== 429 || attempt >= 4) throw error;
-      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+      if (status !== 429 || attempt >= 6) throw error;
+      await new Promise((r) => setTimeout(r, 400 * 2 ** attempt + Math.random() * 300));
     }
   }
 };
