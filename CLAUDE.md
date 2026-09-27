@@ -14,8 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Усі продуктові рішення (зафіксовані в grilling-сесії 2026-09-26), бізнес-модель, конкуренти і демо-сценарій —
 у [ROADMAP.md](ROADMAP.md). Перед нетривіальною роботою читай відповідний розділ там.
 
-**Стан:** скафолд із шаблону `solana-foundation/templates/kit/nextjs-anchor` (початковий коміт). Програма ще
-шаблонна — `anchor/programs/vault` (SOL-vault), її замінюємо на програму Proof of Rent.
+**Стан:** програма `anchor/programs/proof_of_rent` задеплоєна на devnet (`AqMUqWYHuFNdY5s78wX52BF3fKkaQVTPT4UsAvcgsuba`):
+паспорти, оферти оренди (створює орендодавець), кауція в ескроу з комісією платформи. Токен кауції — тестовий
+`tUSDC` (mint у `NEXT_PUBLIC_DEPOSIT_MINT`, authority = fee payer). Разова ініціалізація — `scripts/setup-devnet.ts`,
+e2e — `scripts/e2e-devnet.ts`. Усі транзакції шле `app/api/tx/[action]/route.ts`: Privy-signer користувача + fee payer.
+Деплой-ключі у WSL: `~/keys/fee-payer.json`, `~/keys/proof_of_rent-keypair.json`.
 
 ## Команди
 
@@ -110,15 +113,18 @@ wsl -d Ubuntu -- bash -lc "cd /mnt/c/Programming/SOL/proof-of-rent && NO_DNA=1 n
 
 Дизайн-система: https://claude.ai/artifact/VrvNo24iSfEaY6tozJ8on2 (токени, правила, компоненти). Коротко:
 - Холодний білий (`background` #F6F6F3, `card` білий), чорнило (`foreground`), єдиний бренд-колір — `primary`,
-  сигнальний помаранчевий #FF4A1C: заливки, рамки, лого, штамп «Verified record» (текст на ньому — `primary-foreground`,
-  чорний). Дрібний акцентний текст — лише `text-primary-ink` (#C2330C), бо чистий помаранчевий на білому має 3:1.
+  сигнальний помаранчевий #FF4A1C: заливки, рамки, лого. Штамп «Verified record» — `<Stamp>` (`app/components/stamp.tsx`): лише контур
+  `text-primary-ink`, подвійна рамка, нахил, «зношене» чорнило; ніколи не суцільна заливка, щоб не читався як кнопка. Дрібний акцентний текст — лише `text-primary-ink` (#C2330C), бо чистий помаранчевий на білому має 3:1.
   `caution` і `destructive` — лише для результатів/спорів і завжди зі словом поруч. Жодних сирих кольорів
   Tailwind (`emerald-*`, `blue-*`…) — тільки токени з `app/globals.css`.
 - Фон не суцільний: паспортний гільйош-візерунок `<Guilloche>` (`app/components/guilloche.tsx`) тонкими лініями
-  `text-primary` з `opacity-25`–`35` — у hero лендінгу і в шапці картки паспорта. Не більше одного на екран-блок,
+  `text-primary` з `opacity-25`–`35` — у шапці картки паспорта; у hero лендінгу — кругова печатка-розетка з променями
+  `<SealRosette>` (`app/components/seal-rosette.tsx`). Не більше одного на екран-блок,
   ніколи під дрібним текстом без суцільної підкладки.
 - Паспорт = результат кауції насамперед (`LeaseHistory`, штампи «Returned in full / Partly returned / Arbiter ruled»),
   оплати — другорядно (`PaymentTimeline`: «Landlord confirmed» / «No objection»). Суми польським форматом: «3 200 PLN».
+- Шкала тексту на крок більша за дефолт Tailwind (`--text-xs` 13px … `--text-xl` 22px у `globals.css`); без
+  `text-[11px]`. Сторінки — `max-w-5xl`. На картці паспорта головний факт — «Deposit back in full» (акцентна клітинка).
 - Шрифти: `h1`/`h2` — Newsreader (serif, weight 500), інтерфейс — IBM Plex Sans, суми/дати/адреси — IBM Plex Mono
   з `tabular-nums`.
 - Межі замість тіней; радіуси лише `rounded-sm` (2px, штампи/бейджі), `rounded-md` (4px, контроли),

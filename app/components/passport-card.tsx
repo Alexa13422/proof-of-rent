@@ -1,5 +1,6 @@
 import { HoloSeal } from "@/app/components/brand/holo-seal";
 import { Guilloche } from "@/app/components/guilloche";
+import { Stamp } from "@/app/components/stamp";
 import { passportFacts, type RentPassport } from "@/app/lib/mock/passport";
 
 type PassportCardProps = {
@@ -10,89 +11,71 @@ type PassportCardProps = {
 export function PassportCard({ passport, compact = false }: PassportCardProps) {
   const { completedLeases, returnedInFull, documentedMonths } =
     passportFacts(passport);
+  // The headline fact a landlord looks for first: did deposits come back?
   const facts = [
-    ["Completed leases", completedLeases],
-    ["Deposit back in full", `${returnedInFull} of ${completedLeases}`],
-    ["Months on record", documentedMonths],
-  ] as const;
+    { label: "Deposit back in full", value: `${returnedInFull} of ${completedLeases}`, key: true },
+    { label: "Completed leases", value: completedLeases, key: false },
+    { label: "Months on record", value: documentedMonths, key: false },
+  ];
 
   return (
     <article className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
       <div
-        className={`relative overflow-hidden border-b border-border px-5 py-5 sm:px-7 ${compact ? "min-h-40" : "min-h-52"}`}
+        className={`relative overflow-hidden border-b border-border px-5 sm:px-8 ${compact ? "pb-24 pt-6" : "pb-32 pt-7"}`}
       >
         <Guilloche className="pointer-events-none absolute inset-0 size-full text-primary opacity-25" />
-        <div className={compact ? "relative pr-20" : "relative pr-24 sm:pr-36"}>
+        <div className={compact ? "relative pr-24" : "relative pr-28 sm:pr-44"}>
           <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             Tenant passport
           </p>
-          <h2 className="mt-3 text-xl font-medium sm:text-2xl">
+          <h2
+            className={`mt-3 break-all font-medium leading-tight ${compact ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"}`}
+          >
             {passport.tenantLabel}
           </h2>
-          <p className="mt-1 font-mono text-sm text-muted">
+          <p className="mt-2 font-mono text-sm text-muted">
             {passport.tenantReference}
+            <span aria-hidden="true"> · </span>
+            <span className="whitespace-nowrap">since {passport.verifiedSince}</span>
           </p>
         </div>
         {!compact && (
           <HoloSeal
-            size={132}
+            size={148}
             hash={passport.tenantReference}
-            className="absolute -right-8 top-1/2 -translate-y-1/2 sm:right-2"
+            className="absolute -right-10 top-1/2 -translate-y-1/2 sm:right-4"
           />
         )}
-        <div
-          className={`absolute bottom-4 -rotate-3 rounded-sm bg-primary px-2.5 py-2 text-center text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-primary-foreground ${compact ? "right-4 sm:right-6" : "left-5 sm:left-7"}`}
-        >
-          Verified
-          <br />
-          record
-        </div>
+        <Stamp
+          size={compact ? "sm" : "md"}
+          className={`absolute ${compact ? "bottom-4 right-4 sm:right-6" : "bottom-5 left-5 sm:left-8"}`}
+        />
       </div>
 
-      <dl className="grid grid-cols-3 divide-x divide-border border-b border-border">
-        {facts.map(([label, value]) => (
-          <div key={label} className="px-3 py-4 sm:px-5 sm:py-5">
-            <dt className="text-[11px] leading-tight text-muted sm:text-xs">
-              {label}
-            </dt>
-            <dd className="mt-2 font-mono text-xl font-semibold tabular-nums sm:text-2xl">
-              {value}
+      <dl className="grid grid-cols-[1.25fr_1fr_1fr] divide-x divide-border">
+        {facts.map((f) => (
+          <div
+            key={f.label}
+            className={`px-4 py-5 sm:px-6 sm:py-6 ${f.key ? "bg-primary/[0.06]" : ""}`}
+          >
+            <dt className="text-xs leading-tight text-muted sm:text-sm">{f.label}</dt>
+            <dd
+              className={`mt-2 font-mono font-semibold tabular-nums ${
+                f.key ? "text-2xl text-primary-ink sm:text-4xl" : "text-2xl sm:text-3xl"
+              }`}
+            >
+              {f.value}
             </dd>
           </div>
         ))}
       </dl>
 
-      <div className="flex items-center gap-3 px-5 py-4 text-sm sm:px-7">
-        <CheckIcon />
-        <p>
-          Lease records since{" "}
-          <span className="font-mono">{passport.verifiedSince}</span>
-        </p>
-      </div>
-
       {!compact && (
-        <div className="border-t border-border bg-cream/50 px-5 py-4 text-sm leading-6 text-muted sm:px-7">
-          This passport shows how finished leases ended and how rent was
-          confirmed. It is not a credit score and publishes no personal details.
+        <div className="border-t border-border bg-cream/50 px-5 py-4 text-sm leading-6 text-muted sm:px-8">
+          Shows how finished leases ended and how rent was confirmed. Not a
+          credit score; no personal details are published.
         </div>
       )}
     </article>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        className="size-3.5"
-      >
-        <path d="m5 12 4 4L19 6" />
-      </svg>
-    </span>
   );
 }

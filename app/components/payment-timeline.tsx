@@ -21,6 +21,7 @@ export function PaymentTimeline({
   payments: RentPayment[];
   leaseArea: string;
 }) {
+  const onTime = payments.filter((p) => p.timing === "on-time").length;
   return (
     <section aria-labelledby="payment-history-title">
       <div className="mb-5 flex items-end justify-between gap-4">
@@ -28,18 +29,23 @@ export function PaymentTimeline({
           <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             Rent log · {leaseArea}
           </p>
-          <h2 id="payment-history-title" className="mt-2 text-2xl font-medium">
+          <h2 id="payment-history-title" className="mt-2 text-3xl font-medium">
             Rent payments
           </h2>
         </div>
-        <p className="font-mono text-xs text-muted">{payments.length} months</p>
+        <p className="text-right text-sm text-muted">
+          <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
+            {onTime} of {payments.length}
+          </span>{" "}
+          paid on time
+        </p>
       </div>
 
       <ol className="overflow-hidden rounded-lg border border-border bg-card">
         {payments.map((payment) => (
           <li
             key={payment.month}
-            className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center sm:px-7 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+            className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center sm:px-8 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
           >
             <div className="flex min-w-0 gap-3">
               <span
@@ -59,14 +65,9 @@ export function PaymentTimeline({
                 </p>
               </div>
             </div>
-            <div className="ml-10 flex items-baseline justify-between gap-5 sm:ml-0 sm:block sm:text-right">
-              <p className="font-mono text-sm font-medium tabular-nums">
-                {payment.amount}
-              </p>
-              <p className="mt-1 font-mono text-xs tabular-nums text-muted">
-                {payment.paidAt}
-              </p>
-            </div>
+            <p className="ml-10 font-mono text-xs tabular-nums text-muted sm:ml-0 sm:text-right">
+              Confirmed {payment.paidAt}
+            </p>
           </li>
         ))}
       </ol>

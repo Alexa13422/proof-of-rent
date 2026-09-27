@@ -1,11 +1,9 @@
 "use client";
 
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider, useTheme } from "next-themes";
 import { Toaster } from "sonner";
 import { PropsWithChildren } from "react";
-import { ClusterProvider } from "./cluster-context";
-import { WalletProvider } from "../lib/wallet/context";
-import { SolanaClientProvider } from "../lib/solana-client-context";
+import { AuthProvider } from "../lib/auth/provider";
 
 export function Providers({ children }: PropsWithChildren) {
   return (
@@ -15,12 +13,21 @@ export function Providers({ children }: PropsWithChildren) {
       enableSystem={false}
       enableColorScheme={false}
     >
-      <ClusterProvider>
-        <SolanaClientProvider>
-          <WalletProvider>{children}</WalletProvider>
-        </SolanaClientProvider>
-        <Toaster position="bottom-right" richColors />
-      </ClusterProvider>
+      <AuthProvider>
+        {children}
+        <ThemedToaster />
+      </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+function ThemedToaster() {
+  const { resolvedTheme } = useTheme();
+  return (
+    <Toaster
+      position="bottom-right"
+      richColors
+      theme={resolvedTheme === "light" ? "light" : "dark"}
+    />
   );
 }

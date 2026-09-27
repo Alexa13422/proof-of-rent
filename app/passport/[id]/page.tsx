@@ -1,13 +1,27 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Logo } from "@/app/components/brand/logo";
+import { cache } from "react";
+import { address } from "@solana/kit";
+import { LandlordHistory } from "@/app/components/landlord-history";
 import { LeaseHistory } from "@/app/components/lease-history";
+import { PassportActivity } from "@/app/components/passport-activity";
 import { PassportCard } from "@/app/components/passport-card";
 import { PaymentTimeline } from "@/app/components/payment-timeline";
 import { SharePassportButton } from "@/app/components/share-passport-button";
-import { ThemeToggle } from "@/app/components/theme-toggle";
+import { SiteHeader } from "@/app/components/site-header";
+import { isValidAddress } from "@/app/lib/chain";
 import { getMockPassport, passportFacts } from "@/app/lib/mock/passport";
+import { getChainPassport } from "@/app/lib/passport";
+
+// On-chain data changes; never serve a stale passport.
+export const dynamic = "force-dynamic";
+
+// cache(): metadata and page share one load per request (half the RPC calls).
+const loadPassport = cache(async (id: string) => {
+  if (id === "demo") return getMockPassport(id);
+  if (!isValidAddress(id)) return null;
+  return getChainPassport(id);
+});
 
 type PassportPageProps = {
   params: Promise<{ id: string }>;
@@ -17,7 +31,7 @@ export async function generateMetadata({
   params,
 }: PassportPageProps): Promise<Metadata> {
   const { id } = await params;
-  const passport = getMockPassport(id);
+  const passport = await loadPassport(id);
 
   if (!passport) return {};
 
@@ -30,56 +44,61 @@ export async function generateMetadata({
 
 export default async function PassportPage({ params }: PassportPageProps) {
   const { id } = await params;
-  const passport = getMockPassport(id);
+  const passport = await loadPassport(id);
 
   if (!passport) notFound();
   const latest = passport.leases[0];
+  const rentLog =
+    passport.rentLog ??
+    (latest?.payments.length ? { area: latest.area, payments: latest.payments } : undefined);
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="border-b border-border bg-background/95">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
-          <Link
-            href="/"
-            className="flex min-h-11 items-center gap-2 font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <Logo size={32} mark className="inline-flex sm:hidden" />
-            <Logo size={32} className="hidden sm:inline-flex" />
-          </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <SharePassportButton />
-          </div>
-        </div>
-      </header>
+      <SiteHeader extra={<SharePassportButton />} />
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         <div className="mb-7 flex flex-col gap-3 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-sm border border-border px-3 py-1.5 text-xs font-medium">
               <span className="size-1.5 rounded-full bg-primary" />
               Public record
             </div>
-            <h1 className="text-3xl font-medium sm:text-4xl">Rent passport</h1>
+            <h1 className="text-4xl font-medium sm:text-5xl">Rent passport</h1>
           </div>
-          <p className="max-w-xs text-sm leading-6 text-muted sm:text-right">
-            How this tenant’s leases ended and how rent was paid. No private
-            details are shown.
+          <p className="max-w-sm text-sm leading-6 text-muted sm:text-right">
+            How this person’s leases ended, how rent was paid and, if they
+            rent out, how they treated tenants. No private details are shown.
           </p>
         </div>
 
         <PassportCard passport={passport} />
 
         <div className="mt-12">
-          <LeaseHistory leases={passport.leases} />
+          {passport.leases.length > 0 ? (
+            <LeaseHistory leases={passport.leases} />
+          ) : (
+            <p className="rounded-lg border border-dashed border-border px-5 py-6 text-sm text-muted">
+              No completed leases yet. A lease appears here once its deposit
+              is settled.
+            </p>
+          )}
         </div>
 
-        {latest && latest.payments.length > 0 && (
+        {rentLog && (
           <div className="mt-12">
-            <PaymentTimeline
-              payments={latest.payments}
-              leaseArea={latest.area}
-            />
+            <PaymentTimeline payments={rentLog.payments} leaseArea={rentLog.area} />
+          </div>
+        )}
+
+        {passport.landlord && (
+          <div className="mt-12">
+            <LandlordHistory record={passport.landlord} />
+          </div>
+        )}
+
+        {id !== "demo" && (
+          <div className="mt-12">
+            <PassportActivity owner={address(id)} />
           </div>
         )}
 
@@ -95,7 +114,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
         </aside>
       </main>
 
-      <footer className="mx-auto flex max-w-4xl items-center justify-between gap-4 border-t border-border px-4 py-7 text-xs text-muted sm:px-6">
+      <footer className="mx-auto flex max-w-5xl items-center justify-between gap-4 border-t border-border px-4 py-7 text-xs text-muted sm:px-6">
         <span>Proof of Rent</span>
         <span className="font-mono">Record ID: {passport.id}</span>
       </footer>

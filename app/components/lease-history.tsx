@@ -23,11 +23,11 @@ export function LeaseHistory({ leases }: { leases: Lease[] }) {
           <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
             Deposit record
           </p>
-          <h2 id="lease-history-title" className="mt-2 text-2xl font-medium">
+          <h2 id="lease-history-title" className="mt-2 text-3xl font-medium">
             Completed leases
           </h2>
         </div>
-        <p className="font-mono text-xs text-muted">{leases.length} leases</p>
+        <p className="font-mono text-sm text-muted">{leases.length} leases</p>
       </div>
 
       <ol className="overflow-hidden rounded-lg border border-border bg-card">
@@ -36,13 +36,12 @@ export function LeaseHistory({ leases }: { leases: Lease[] }) {
           return (
             <li
               key={lease.id}
-              className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:px-7 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
+              className="grid gap-4 px-5 py-6 sm:grid-cols-[1fr_auto] sm:px-8 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border"
             >
               <div className="min-w-0">
-                <p className="font-medium">{lease.area}</p>
+                <p className="text-lg font-medium">{lease.area}</p>
                 <p className="mt-1 text-sm text-muted">
-                  {lease.period} · {lease.months} months · rent{" "}
-                  <span className="font-mono tabular-nums">{lease.rent}</span>
+                  {lease.period} · {lease.months} months
                 </p>
                 <p className="mt-1 text-sm text-muted">
                   Landlord with {lease.landlordLeases}{" "}
@@ -58,9 +57,8 @@ export function LeaseHistory({ leases }: { leases: Lease[] }) {
                 >
                   {outcome.label}
                 </span>
-                <p className="font-mono text-sm tabular-nums sm:mt-2">
-                  {lease.returned}{" "}
-                  <span className="text-muted">of {lease.deposit}</span>
+                <p className="mt-3 font-mono text-sm font-semibold tabular-nums">
+                  {lease.depositReturn}
                 </p>
               </div>
             </li>
