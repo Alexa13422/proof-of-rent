@@ -1,7 +1,8 @@
 // Read-only access to on-chain state. Safe on the server and in the browser.
 import {
   address,
-  createSolanaRpc,
+  createDefaultRpcTransport,
+  createSolanaRpcFromTransport,
   getAddressDecoder,
   getBase58Decoder,
   getBase64Encoder,
@@ -29,7 +30,21 @@ import {
 
 export const DEVNET_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
-export const rpc = createSolanaRpc(DEVNET_RPC_URL);
+// ponytail: public devnet RPC rate-limits bursts (429). Retry with backoff
+// instead of failing the page; a paid RPC URL removes the need.
+const httpTransport = createDefaultRpcTransport({ url: DEVNET_RPC_URL });
+const retryingTransport: typeof httpTransport = async (request) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await httpTransport(request);
+    } catch (error) {
+      const status = (error as { context?: { statusCode?: number } }).context?.statusCode;
+      if (status !== 429 || attempt >= 4) throw error;
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
+};
+export const rpc = createSolanaRpcFromTransport(retryingTransport);
 
 export const DEPOSIT_MINT = process.env.NEXT_PUBLIC_DEPOSIT_MINT
   ? address(process.env.NEXT_PUBLIC_DEPOSIT_MINT)

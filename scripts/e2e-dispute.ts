@@ -38,6 +38,10 @@ import { getProposeSettlementInstruction } from "../app/generated/proof_of_rent/
 import { getOpenDisputeInstructionAsync } from "../app/generated/proof_of_rent/instructions/openDispute.ts";
 import { getSubmitEvidenceInstruction } from "../app/generated/proof_of_rent/instructions/submitEvidence.ts";
 import { getResolveDisputeInstructionAsync } from "../app/generated/proof_of_rent/instructions/resolveDispute.ts";
+import { getClaimRentInstructionAsync } from "../app/generated/proof_of_rent/instructions/claimRent.ts";
+import { getConfirmRentInstruction } from "../app/generated/proof_of_rent/instructions/confirmRent.ts";
+import { findRentPaymentPda } from "../app/generated/proof_of_rent/pdas/rentPayment.ts";
+import { fetchRentPayment } from "../app/generated/proof_of_rent/accounts/rentPayment.ts";
 
 const env = Object.fromEntries(
   readFileSync(".env", "utf8")
@@ -139,6 +143,22 @@ await send("tenant accepts", [
 ]);
 const tenantAfterAccept = await balance(tenant.address);
 
+// Monthly rent: last calendar month (lease started 90 days ago).
+const d = new Date();
+const prev = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1));
+const period = prev.getUTCFullYear() * 100 + prev.getUTCMonth() + 1;
+const monthStart = BigInt(prev.getTime() / 1000);
+await send(`tenant marks ${period} paid`, [
+  await getClaimRentInstructionAsync({ tenant, payer: feePayer, lease, period, paidAt: monthStart + 3n * 86400n }),
+]);
+const [rentPda] = await findRentPaymentPda({ lease, period });
+await send("landlord confirms rent (received day 4)", [
+  getConfirmRentInstruction({ landlord, rentPayment: rentPda, receivedAt: monthStart + 4n * 86400n }),
+]);
+const rent = (await fetchRentPayment(rpc, rentPda)).data;
+console.log("  rent", { period: rent.period, status: rent.status, paidAt: rent.paidAt, receivedAt: rent.receivedAt });
+if (rent.status !== 1 || rent.receivedAt !== monthStart + 4n * 86400n) throw new Error("rent record wrong");
+
 await send("landlord proposes 3000 back (with evidence)", [
   getProposeSettlementInstruction({ landlord, lease, toTenant: OFFER, evidence: hash(2) }),
 ]);
@@ -183,10 +203,13 @@ const treasuryGot = (await balance(config.treasury)) - treasuryBefore;
 console.log({ status: state.status, outcome: state.outcome, amountToTenant: state.amountToTenant });
 console.log({ tenantGot, landlordGot: landlordBal, treasuryGot });
 const ok =
+  state.checkinHash[0] === 7 &&
   state.amountToTenant === AWARD &&
   tenantGot === AWARD + bond &&
   landlordBal === DEPOSIT - AWARD - bond &&
   treasuryGot === bond;
 console.log(ok ? "\nALL CHECKS PASSED" : "\nMISMATCH");
 console.log(`lease: http://localhost:3000/offers/${lease}`);
+console.log(`tenant passport: http://localhost:3000/passport/${tenant.address}`);
+console.log(`landlord passport: http://localhost:3000/passport/${landlord.address}`);
 if (!ok) process.exit(1);
