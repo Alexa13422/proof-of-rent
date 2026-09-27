@@ -240,7 +240,9 @@ export function StatusBadge({ lease }: { lease: LeaseRecord }) {
       ? OUTCOME_LABEL[lease.outcome]
       : STATUS_LABEL[lease.status];
   const tone =
-    lease.status === LeaseStatus.Offered || lease.status === LeaseStatus.Active
+    lease.status === LeaseStatus.Disputed
+      ? "border-destructive text-destructive"
+      : lease.status === LeaseStatus.Offered || lease.status === LeaseStatus.Active
       ? "border-primary text-primary-ink"
       : lease.status === LeaseStatus.Closed
         ? "border-foreground text-foreground"

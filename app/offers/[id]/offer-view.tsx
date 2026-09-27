@@ -5,15 +5,24 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useAccount } from "../../lib/auth/use-account";
 import { sendAction, useLease } from "../../lib/hooks";
+import useSWR from "swr";
 import {
+  DepositOutcome,
   LeaseStatus,
+  disputeBond,
   formatAmount,
   formatDate,
+  formatDateTime,
+  getConfig,
   parseAmount,
+  responseDeadline,
+  returnDeadline,
   settlementOffer,
   TOKEN_SYMBOL,
   type LeaseRecord,
 } from "../../lib/chain";
+import { hashOrNull, uploadEvidence } from "../../lib/evidence";
+import { EvidenceInput, EvidenceView } from "../../components/evidence";
 import {
   dangerButton,
   eyebrow,
@@ -26,6 +35,7 @@ import { StatusBadge } from "../../dashboard/dashboard";
 export function OfferView({ id }: { id: string }) {
   const { data: lease, isLoading, mutate } = useLease(id);
   const account = useAccount();
+  const { data: config } = useSWR("config", getConfig);
 
   if (isLoading) return <p className="text-muted">Loading…</p>;
   if (!lease) return <p className="text-muted">This offer does not exist.</p>;
@@ -36,6 +46,16 @@ export function OfferView({ id }: { id: string }) {
       : account.address === lease.tenant
         ? "tenant"
         : null;
+  const isArbiter =
+    !!account.address &&
+    !!config &&
+    (account.address === config.arbiter || account.address === config.admin);
+  const checkin = hashOrNull(lease.checkinHash);
+  const landlordEvidence = hashOrNull(lease.landlordEvidence);
+  const tenantEvidence = hashOrNull(lease.tenantEvidence);
+  const disputed =
+    lease.status === LeaseStatus.Disputed ||
+    lease.outcome === DepositOutcome.ArbiterResolved;
 
   return (
     <div className="space-y-8">
@@ -51,13 +71,35 @@ export function OfferView({ id }: { id: string }) {
 
       {role ? (
         <Actions lease={lease} role={role} onDone={() => mutate()} />
-      ) : (
+      ) : isArbiter && lease.status === LeaseStatus.Disputed ? null : (
         <p className="text-sm text-muted">
           {account.authenticated
             ? "You are not a party to this lease."
             : "Sign in to respond to this offer."}
         </p>
       )}
+
+      {isArbiter && lease.status === LeaseStatus.Disputed && (
+        <Resolve lease={lease} onDone={() => mutate()} />
+      )}
+
+      {(disputed || landlordEvidence) && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-medium">
+            {disputed ? "Dispute file" : "Landlord’s reasons"}
+          </h2>
+          {disputed && (
+            <p className="text-sm leading-6 text-muted">
+              Public record. Each statement’s fingerprint is stored on-chain,
+              so neither side can change it without it showing.
+            </p>
+          )}
+          <EvidenceView hash={landlordEvidence} title="Landlord" />
+          {disputed && <EvidenceView hash={tenantEvidence} title="Tenant" />}
+        </div>
+      )}
+
+      {checkin && <EvidenceView hash={checkin} title="Move-in condition" />}
     </div>
   );
 }
@@ -104,6 +146,8 @@ function Actions({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [settle, setSettle] = useState("");
+  const [text, setText] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
   const [now] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
   const offer = settlementOffer(lease);
 
@@ -117,6 +161,17 @@ function Actions({
       toast.error((e as Error).message);
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function upload(kind: "proposal" | "dispute") {
+    setBusy("upload");
+    try {
+      return await uploadEvidence({ kind, text, photos });
+    } catch (e) {
+      toast.error((e as Error).message);
+      setBusy(null);
+      return null;
     }
   }
 
@@ -166,6 +221,10 @@ function Actions({
     );
   }
 
+  if (lease.status === LeaseStatus.Disputed) {
+    return <DisputeActions lease={lease} role={role} onDone={onDone} />;
+  }
+
   if (lease.status === LeaseStatus.Rejected && role === "landlord") {
     return wrap(
       <Link href="/offers/new" className={primaryButton}>
@@ -177,11 +236,41 @@ function Actions({
 
   if (lease.status !== LeaseStatus.Active) return null;
 
-  const unlockAt = lease.endTs + lease.returnTimeout;
+  const returnBy = returnDeadline(lease);
+  const respondBy = responseDeadline(lease);
+  const returnOpen = now <= returnBy;
+  const responseOpen = offer !== null && now <= respondBy;
 
   if (role === "landlord") {
-    return wrap(
-      <>
+    if (offer !== null) {
+      return wrap(
+        !responseOpen && (
+          <button
+            className={primaryButton}
+            disabled={!!busy}
+            onClick={() => run("finalize_settlement", {}, "Deposit settled")}
+          >
+            Settle: {formatAmount(offer)} to tenant
+          </button>
+        ),
+        responseOpen
+          ? `You proposed returning ${formatAmount(offer)}. The tenant can accept or dispute it until ${formatDateTime(respondBy)}; if they stay silent, it settles automatically.`
+          : `The tenant did not respond to your proposal of ${formatAmount(offer)}. Settle it now.`
+      );
+    }
+    if (!returnOpen) {
+      return wrap(
+        null,
+        `The return window ended on ${formatDateTime(returnBy)}. The tenant can now claim the full deposit.`
+      );
+    }
+    return (
+      <section className="space-y-6 rounded-lg border border-border bg-card p-5 sm:p-7">
+        <p className="leading-7 text-muted">
+          Deposit of {formatAmount(lease.depositAmount)} is in escrow. Return it or
+          propose a partial return by {formatDateTime(returnBy)}. If you do nothing,
+          the tenant can claim it in full.
+        </p>
         <button
           className={primaryButton}
           disabled={!!busy}
@@ -189,60 +278,246 @@ function Actions({
         >
           Return full deposit
         </button>
-        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+        <div className="space-y-3 border-t border-border pt-6">
+          <p className="font-medium">Or propose a partial return</p>
+          <p className="text-sm text-muted">
+            One proposal only. Explain the deductions and add photos: the tenant can
+            dispute it, and then the arbiter decides using this evidence.
+          </p>
           <input
-            className={`${inputClass} w-40 font-mono`}
+            className={`${inputClass} w-48 font-mono`}
             inputMode="decimal"
             placeholder={`to tenant, ${TOKEN_SYMBOL}`}
             value={settle}
             onChange={(e) => setSettle(e.target.value)}
           />
+          <EvidenceInput
+            text={text}
+            photos={photos}
+            onText={setText}
+            onPhotos={setPhotos}
+            placeholder="What is damaged and what does it cost to fix?"
+            required
+          />
           <button
             className={secondaryButton}
-            disabled={!!busy || !settle}
-            onClick={() => {
+            disabled={!!busy || !settle || !text.trim()}
+            onClick={async () => {
+              let amount: bigint;
               try {
-                parseAmount(settle);
+                amount = parseAmount(settle);
               } catch {
                 toast.error("Invalid amount");
                 return;
               }
-              void run("propose_settlement", { toTenant: settle }, "Proposal sent to tenant");
+              if (amount >= lease.depositAmount) {
+                toast.error("To return everything, use Return full deposit");
+                return;
+              }
+              const evidence = await upload("proposal");
+              if (evidence) {
+                void run("propose_settlement", { toTenant: settle, evidence }, "Proposal sent to tenant");
+              }
             }}
           >
-            Propose partial return
+            {busy === "upload" ? "Uploading…" : "Propose partial return"}
           </button>
         </div>
-      </>,
-      offer !== null
-        ? `You proposed returning ${formatAmount(offer)}. Waiting for the tenant.`
-        : `Deposit of ${formatAmount(lease.depositAmount)} is in escrow. If you do nothing, the tenant can claim it in full after ${formatDate(unlockAt)}.`
+      </section>
     );
   }
 
-  return wrap(
-    <>
-      {offer !== null && (
-        <button
-          className={primaryButton}
-          disabled={!!busy}
-          onClick={() =>
-            run("accept_settlement", { expected: offer.toString() }, "Settlement accepted")
-          }
-        >
-          Accept {formatAmount(offer)}
-        </button>
-      )}
+  // tenant
+  if (offer === null) {
+    return wrap(
       <button
-        className={secondaryButton}
-        disabled={!!busy || now <= unlockAt}
+        className={primaryButton}
+        disabled={!!busy || returnOpen}
         onClick={() => run("claim_after_timeout", {}, "Deposit claimed")}
       >
         Claim full deposit
+      </button>,
+      returnOpen
+        ? `Your deposit is in escrow. The landlord has until ${formatDateTime(returnBy)} to return it or propose a deduction. If they do not respond, you can claim it in full.`
+        : "The landlord did not respond in time. You can claim the full deposit."
+    );
+  }
+  if (!responseOpen) {
+    return wrap(
+      <button
+        className={primaryButton}
+        disabled={!!busy}
+        onClick={() => run("finalize_settlement", {}, "Deposit settled")}
+      >
+        Receive {formatAmount(offer)}
+      </button>,
+      `The time to dispute ended on ${formatDateTime(respondBy)}. The landlord’s proposal of ${formatAmount(offer)} stands.`
+    );
+  }
+  const bond = disputeBond(lease.depositAmount);
+  return (
+    <section className="space-y-6 rounded-lg border border-border bg-card p-5 sm:p-7">
+      <p className="leading-7 text-muted">
+        The landlord proposes returning <strong>{formatAmount(offer)}</strong> of{" "}
+        {formatAmount(lease.depositAmount)}. Their reasons are below. Respond by{" "}
+        {formatDateTime(respondBy)}; if you stay silent, the proposal settles.
+      </p>
+      <button
+        className={primaryButton}
+        disabled={!!busy}
+        onClick={() => run("accept_settlement", { expected: offer.toString() }, "Settlement accepted")}
+      >
+        Accept {formatAmount(offer)}
       </button>
-    </>,
-    offer !== null
-      ? `The landlord proposes returning ${formatAmount(offer)} of ${formatAmount(lease.depositAmount)}.`
-      : `Your deposit is in escrow. If the landlord does not respond, you can claim it in full after ${formatDate(unlockAt)}.`
+      <div className="space-y-3 border-t border-border pt-6">
+        <p className="font-medium">Disagree? Open a dispute</p>
+        <p className="text-sm leading-6 text-muted">
+          The arbiter reviews both sides and decides how much you get. You post a
+          bond of {formatAmount(bond)}: you get it back if the arbiter awards you more
+          than {formatAmount(offer)}, and then the landlord pays the same amount
+          instead. Otherwise the bond goes to the platform.
+        </p>
+        <EvidenceInput
+          text={text}
+          photos={photos}
+          onText={setText}
+          onPhotos={setPhotos}
+          placeholder="Why is the proposal unfair? Add photos of the flat at move-out."
+          required
+        />
+        <button
+          className={dangerButton}
+          disabled={!!busy || !text.trim()}
+          onClick={async () => {
+            const evidence = await upload("dispute");
+            if (evidence) void run("open_dispute", { evidence }, "Dispute opened");
+          }}
+        >
+          {busy === "upload" ? "Uploading…" : `Dispute (bond ${formatAmount(bond)})`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DisputeActions({
+  lease,
+  role,
+  onDone,
+}: {
+  lease: LeaseRecord;
+  role: "landlord" | "tenant";
+  onDone: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const mine = hashOrNull(role === "tenant" ? lease.tenantEvidence : lease.landlordEvidence);
+
+  return (
+    <section className="space-y-3 rounded-lg border border-destructive/40 bg-card p-5 sm:p-7">
+      <p className="leading-7 text-muted">
+        This deposit is in dispute since {formatDateTime(lease.disputedAt)}. Nobody can
+        move it until the arbiter decides. You can add to your statement below; the
+        arbiter sees the full history.
+      </p>
+      <EvidenceInput
+        text={text}
+        photos={photos}
+        onText={setText}
+        onPhotos={setPhotos}
+        placeholder="Add an argument or more photos"
+      />
+      <button
+        className={secondaryButton}
+        disabled={busy || (!text.trim() && photos.length === 0)}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const evidence = await uploadEvidence({ kind: "statement", text, photos, prev: mine });
+            await sendAction("submit_evidence", { lease: lease.address, evidence });
+            setText("");
+            setPhotos([]);
+            toast.success("Statement added");
+            onDone();
+          } catch (e) {
+            toast.error((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Saving…" : "Add to my statement"}
+      </button>
+    </section>
+  );
+}
+
+function Resolve({ lease, onDone }: { lease: LeaseRecord; onDone: () => void }) {
+  const offer = settlementOffer(lease) ?? 0n;
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const bond = lease.disputeBond;
+
+  let parsed: bigint | null = null;
+  try {
+    parsed = amount ? parseAmount(amount) : null;
+  } catch {
+    parsed = null;
+  }
+  const valid = parsed !== null && parsed <= lease.depositAmount;
+  const tenantWins = valid && parsed! > offer;
+
+  const preset = (v: bigint) => setAmount((Number(v) / 1e6).toString());
+
+  return (
+    <section className="space-y-4 rounded-lg border-2 border-primary bg-card p-5 sm:p-7">
+      <p className="font-medium">Arbiter decision</p>
+      <p className="text-sm leading-6 text-muted">
+        Landlord offered {formatAmount(offer)} of {formatAmount(lease.depositAmount)}.
+        Tenant posted a bond of {formatAmount(bond)}. Read both statements below, then
+        set how much of the deposit goes to the tenant.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button className={secondaryButton} onClick={() => preset(offer)}>
+          Landlord&apos;s offer
+        </button>
+        <button className={secondaryButton} onClick={() => preset(lease.depositAmount)}>
+          Full deposit
+        </button>
+      </div>
+      <input
+        className={`${inputClass} w-48 font-mono`}
+        inputMode="decimal"
+        placeholder={`to tenant, ${TOKEN_SYMBOL}`}
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
+      {valid && (
+        <p className="text-sm leading-6">
+          {tenantWins
+            ? `Tenant wins: gets ${formatAmount(parsed!)} + bond back; landlord gets ${formatAmount(lease.depositAmount - parsed! - (bond < lease.depositAmount - parsed! ? bond : lease.depositAmount - parsed!))} and pays the bond to the platform.`
+            : `Landlord wins: tenant gets ${formatAmount(parsed!)}, landlord ${formatAmount(lease.depositAmount - parsed!)}; the tenant’s bond goes to the platform.`}
+        </p>
+      )}
+      <button
+        className={primaryButton}
+        disabled={busy || !valid}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await sendAction("resolve_dispute", { lease: lease.address, toTenant: amount });
+            toast.success("Dispute resolved");
+            onDone();
+          } catch (e) {
+            toast.error((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Resolving…" : "Resolve dispute"}
+      </button>
+    </section>
   );
 }

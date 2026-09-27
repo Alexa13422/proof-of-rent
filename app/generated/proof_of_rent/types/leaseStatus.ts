@@ -21,6 +21,7 @@ export enum LeaseStatus {
   Cancelled,
   Active,
   Closed,
+  Disputed,
 }
 
 export type LeaseStatusArgs = LeaseStatus;

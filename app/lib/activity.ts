@@ -21,6 +21,8 @@ const LABELS: Record<string, string> = {
   ReleaseFull: "Deposit returned in full",
   AcceptSettlement: "Deposit settled by agreement",
   ClaimAfterTimeout: "Deposit claimed after the return window",
+  FinalizeSettlement: "Deposit settled (proposal not contested)",
+  ResolveDispute: "Deposit dispute decided by the arbiter",
 };
 
 export type PassportEvent = {

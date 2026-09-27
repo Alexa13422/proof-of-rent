@@ -15,7 +15,6 @@ import {
   LeaseStatus,
   PROOF_OF_RENT_PROGRAM_ADDRESS,
   fetchMaybeConfig,
-  fetchMaybeLease,
   fetchMaybePassport,
   findConfigPda,
   findPassportPda,
@@ -37,6 +36,10 @@ export const TOKEN_DECIMALS = 6;
 /** Lease field offsets (after the 8-byte discriminator). */
 const LANDLORD_OFFSET = 8n;
 const TENANT_OFFSET = 40n;
+/** 8 + Lease::INIT_SPACE (area has max_len 48, so the account is fixed-size). */
+const LEASE_SPACE = 417;
+/** 8 + 4 pubkeys + 8 u64/i64 fields. */
+const STATUS_OFFSET = 200n;
 
 export type LeaseRecord = Lease & { address: Address };
 
@@ -56,8 +59,18 @@ export async function getPassport(owner: Address): Promise<Passport | null> {
 }
 
 export async function getLease(lease: Address): Promise<LeaseRecord | null> {
-  const account = await fetchMaybeLease(rpc, lease);
-  return account.exists ? { ...account.data, address: lease } : null;
+  const { value } = await rpc.getAccountInfo(lease, { encoding: "base64" }).send();
+  if (!value || value.owner !== PROOF_OF_RENT_PROGRAM_ADDRESS) return null;
+  return decodeLease(value.data[0], lease);
+}
+
+/** Leases created before the dispute upgrade are shorter; the new fields
+ *  read as zeros (no photos, no proposal time, no dispute). */
+function decodeLease(base64: string, address: Address): LeaseRecord {
+  const raw = getBase64Encoder().encode(base64);
+  const size = LEASE_SPACE;
+  const data = raw.length >= size ? raw : Uint8Array.from({ length: size }, (_, i) => raw[i] ?? 0);
+  return { ...getLeaseDecoder().decode(data), address };
 }
 
 export async function getConfig() {
@@ -66,10 +79,25 @@ export async function getConfig() {
   return account.exists ? account.data : null;
 }
 
-export async function getLeasesFor(
-  user: Address,
-  role: "landlord" | "tenant"
-): Promise<LeaseRecord[]> {
+export function getLeasesFor(user: Address, role: "landlord" | "tenant") {
+  return findLeases({
+    offset: role === "landlord" ? LANDLORD_OFFSET : TENANT_OFFSET,
+    bytes: user as unknown as Base58EncodedBytes,
+  });
+}
+
+/** Every lease currently in dispute (arbiter queue). */
+export function getDisputedLeases() {
+  return findLeases({
+    offset: STATUS_OFFSET,
+    bytes: getBase58Decoder().decode(new Uint8Array([LeaseStatus.Disputed])) as Base58EncodedBytes,
+  });
+}
+
+async function findLeases(filter: {
+  offset: bigint;
+  bytes: Base58EncodedBytes;
+}): Promise<LeaseRecord[]> {
   const base58 = getBase58Decoder();
   const accounts = await rpc
     .getProgramAccounts(PROOF_OF_RENT_PROGRAM_ADDRESS, {
@@ -82,25 +110,26 @@ export async function getLeasesFor(
             encoding: "base58",
           },
         },
-        {
-          memcmp: {
-            offset: role === "landlord" ? LANDLORD_OFFSET : TENANT_OFFSET,
-            bytes: user as unknown as Base58EncodedBytes,
-            encoding: "base58",
-          },
-        },
+        { memcmp: { ...filter, encoding: "base58" } },
       ],
     })
     .send();
 
-  const decoder = getLeaseDecoder();
-  const b64 = getBase64Encoder();
   return accounts
-    .map(({ pubkey, account }) => ({
-      ...decoder.decode(b64.encode(account.data[0])),
-      address: pubkey,
-    }))
+    .map(({ pubkey, account }) => decodeLease(account.data[0], pubkey))
     .sort((a, b) => Number(b.createdAt - a.createdAt));
+}
+
+/** Deposit-token balance of `owner` in raw units; 0 if it has no token account yet. */
+export async function getTokenBalance(owner: Address): Promise<bigint> {
+  if (!DEPOSIT_MINT) return 0n;
+  const { value } = await rpc
+    .getTokenAccountsByOwner(owner, { mint: DEPOSIT_MINT }, { encoding: "jsonParsed" })
+    .send();
+  return value.reduce(
+    (sum, { account }) => sum + BigInt(account.data.parsed.info.tokenAmount.amount),
+    0n
+  );
 }
 
 // ---------------------------------------------------------------- formatting
@@ -143,6 +172,7 @@ export const STATUS_LABEL: Record<LeaseStatus, string> = {
   [LeaseStatus.Cancelled]: "Withdrawn",
   [LeaseStatus.Active]: "Active · deposit in escrow",
   [LeaseStatus.Closed]: "Closed",
+  [LeaseStatus.Disputed]: "In dispute · arbiter decides",
 };
 
 export const OUTCOME_LABEL: Record<DepositOutcome, string> = {
@@ -150,7 +180,26 @@ export const OUTCOME_LABEL: Record<DepositOutcome, string> = {
   [DepositOutcome.FullReturn]: "Returned in full",
   [DepositOutcome.Settled]: "Partly returned",
   [DepositOutcome.TimeoutClaim]: "Claimed after timeout",
+  [DepositOutcome.ArbiterResolved]: "Decided by arbiter",
 };
+
+/** Bond the tenant posts to open a dispute (mirrors DISPUTE_BOND_BPS). */
+export const disputeBond = (deposit: bigint) => (deposit * 500n) / 10_000n;
+
+/** Landlord must return or propose by this time. */
+export const returnDeadline = (l: Lease) => l.endTs + l.returnTimeout;
+/** Tenant must accept or dispute a proposal by this time. */
+export const responseDeadline = (l: Lease) => l.proposedAt + l.returnTimeout;
+
+export function formatDateTime(ts: bigint): string {
+  return new Date(Number(ts) * 1000).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function settlementOffer(lease: Lease): bigint | null {
   return isSome(lease.settlementOffer) ? lease.settlementOffer.value : null;

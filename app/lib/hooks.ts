@@ -1,11 +1,12 @@
 "use client";
 
-import useSWR from "swr";
+import useSWR, { mutate } from "swr";
 import { address as toAddress } from "@solana/kit";
 import {
   getLease,
   getLeasesFor,
   getPassport,
+  getTokenBalance,
   type LeaseRecord,
   type Passport,
 } from "./chain";
@@ -38,8 +39,19 @@ export function useLease(lease: string) {
   );
 }
 
+export function useBalance(owner: string | null) {
+  return useSWR<bigint>(
+    owner ? ["balance", owner] : null,
+    () => getTokenBalance(toAddress(owner!)),
+    { refreshInterval: 15_000 }
+  );
+}
+
 export type TxResult = { signature: string; lease?: string };
 
-export function sendAction(action: string, body?: Record<string, unknown>) {
-  return callApi<TxResult>(`/api/tx/${action}`, body);
+export async function sendAction(action: string, body?: Record<string, unknown>) {
+  const result = await callApi<TxResult>(`/api/tx/${action}`, body);
+  // Deposits, refunds and the starter mint all move tokens.
+  void mutate((key) => Array.isArray(key) && key[0] === "balance");
+  return result;
 }

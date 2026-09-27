@@ -52,7 +52,7 @@ export type Config = {
   admin: Address;
   /** Owner of the token accounts that receive platform fees. */
   treasury: Address;
-  /** Reserved for the dispute flow (next milestone). */
+  /** Resolves deposit disputes (the admin can too). */
   arbiter: Address;
   feeBps: number;
   bump: number;
@@ -62,7 +62,7 @@ export type ConfigArgs = {
   admin: Address;
   /** Owner of the token accounts that receive platform fees. */
   treasury: Address;
-  /** Reserved for the dispute flow (next milestone). */
+  /** Resolves deposit disputes (the admin can too). */
   arbiter: Address;
   feeBps: number;
   bump: number;

@@ -23,11 +23,15 @@ import {
   parseClaimAfterTimeoutInstruction,
   parseCreateOfferInstruction,
   parseCreatePassportInstruction,
+  parseFinalizeSettlementInstruction,
   parseInitConfigInstruction,
+  parseOpenDisputeInstruction,
   parseProposeSettlementInstruction,
   parseRejectOfferInstruction,
   parseReleaseFullInstruction,
+  parseResolveDisputeInstruction,
   parseSetAdminInstruction,
+  parseSubmitEvidenceInstruction,
   parseUpdateConfigInstruction,
   type ParsedAcceptOfferInstruction,
   type ParsedAcceptSettlementInstruction,
@@ -35,11 +39,15 @@ import {
   type ParsedClaimAfterTimeoutInstruction,
   type ParsedCreateOfferInstruction,
   type ParsedCreatePassportInstruction,
+  type ParsedFinalizeSettlementInstruction,
   type ParsedInitConfigInstruction,
+  type ParsedOpenDisputeInstruction,
   type ParsedProposeSettlementInstruction,
   type ParsedRejectOfferInstruction,
   type ParsedReleaseFullInstruction,
+  type ParsedResolveDisputeInstruction,
   type ParsedSetAdminInstruction,
+  type ParsedSubmitEvidenceInstruction,
   type ParsedUpdateConfigInstruction,
 } from "../instructions";
 
@@ -101,11 +109,15 @@ export enum ProofOfRentInstruction {
   ClaimAfterTimeout,
   CreateOffer,
   CreatePassport,
+  FinalizeSettlement,
   InitConfig,
+  OpenDispute,
   ProposeSettlement,
   RejectOffer,
   ReleaseFull,
+  ResolveDispute,
   SetAdmin,
+  SubmitEvidence,
   UpdateConfig,
 }
 
@@ -183,12 +195,34 @@ export function identifyProofOfRentInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([220, 72, 152, 119, 178, 196, 25, 170]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.FinalizeSettlement;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([23, 235, 115, 232, 168, 96, 1, 231]),
       ),
       0,
     )
   ) {
     return ProofOfRentInstruction.InitConfig;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([137, 25, 99, 119, 23, 223, 161, 42]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.OpenDispute;
   }
   if (
     containsBytes(
@@ -227,12 +261,34 @@ export function identifyProofOfRentInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([231, 6, 202, 6, 96, 103, 12, 230]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.ResolveDispute;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([251, 163, 0, 52, 91, 194, 187, 92]),
       ),
       0,
     )
   ) {
     return ProofOfRentInstruction.SetAdmin;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([12, 169, 228, 194, 229, 31, 44, 39]),
+      ),
+      0,
+    )
+  ) {
+    return ProofOfRentInstruction.SubmitEvidence;
   }
   if (
     containsBytes(
@@ -272,8 +328,14 @@ export type ParsedProofOfRentInstruction<
       instructionType: ProofOfRentInstruction.CreatePassport;
     } & ParsedCreatePassportInstruction<TProgram>)
   | ({
+      instructionType: ProofOfRentInstruction.FinalizeSettlement;
+    } & ParsedFinalizeSettlementInstruction<TProgram>)
+  | ({
       instructionType: ProofOfRentInstruction.InitConfig;
     } & ParsedInitConfigInstruction<TProgram>)
+  | ({
+      instructionType: ProofOfRentInstruction.OpenDispute;
+    } & ParsedOpenDisputeInstruction<TProgram>)
   | ({
       instructionType: ProofOfRentInstruction.ProposeSettlement;
     } & ParsedProposeSettlementInstruction<TProgram>)
@@ -284,8 +346,14 @@ export type ParsedProofOfRentInstruction<
       instructionType: ProofOfRentInstruction.ReleaseFull;
     } & ParsedReleaseFullInstruction<TProgram>)
   | ({
+      instructionType: ProofOfRentInstruction.ResolveDispute;
+    } & ParsedResolveDisputeInstruction<TProgram>)
+  | ({
       instructionType: ProofOfRentInstruction.SetAdmin;
     } & ParsedSetAdminInstruction<TProgram>)
+  | ({
+      instructionType: ProofOfRentInstruction.SubmitEvidence;
+    } & ParsedSubmitEvidenceInstruction<TProgram>)
   | ({
       instructionType: ProofOfRentInstruction.UpdateConfig;
     } & ParsedUpdateConfigInstruction<TProgram>);
@@ -337,11 +405,25 @@ export function parseProofOfRentInstruction<TProgram extends string>(
         ...parseCreatePassportInstruction(instruction),
       };
     }
+    case ProofOfRentInstruction.FinalizeSettlement: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.FinalizeSettlement,
+        ...parseFinalizeSettlementInstruction(instruction),
+      };
+    }
     case ProofOfRentInstruction.InitConfig: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: ProofOfRentInstruction.InitConfig,
         ...parseInitConfigInstruction(instruction),
+      };
+    }
+    case ProofOfRentInstruction.OpenDispute: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.OpenDispute,
+        ...parseOpenDisputeInstruction(instruction),
       };
     }
     case ProofOfRentInstruction.ProposeSettlement: {
@@ -365,11 +447,25 @@ export function parseProofOfRentInstruction<TProgram extends string>(
         ...parseReleaseFullInstruction(instruction),
       };
     }
+    case ProofOfRentInstruction.ResolveDispute: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.ResolveDispute,
+        ...parseResolveDisputeInstruction(instruction),
+      };
+    }
     case ProofOfRentInstruction.SetAdmin: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: ProofOfRentInstruction.SetAdmin,
         ...parseSetAdminInstruction(instruction),
+      };
+    }
+    case ProofOfRentInstruction.SubmitEvidence: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ProofOfRentInstruction.SubmitEvidence,
+        ...parseSubmitEvidenceInstruction(instruction),
       };
     }
     case ProofOfRentInstruction.UpdateConfig: {

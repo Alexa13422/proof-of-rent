@@ -35,6 +35,7 @@ struct Fx {
     landlord: Keypair,
     tenant: Keypair,
     stranger: Keypair,
+    arbiter: Keypair,
     treasury: Pubkey,
     mint: Pubkey,
     tenant_token: Pubkey,
@@ -72,6 +73,7 @@ impl Fx {
         let landlord = Keypair::new();
         let tenant = Keypair::new();
         let stranger = Keypair::new();
+        let arbiter = Keypair::new();
         let treasury = Pubkey::new_unique();
         for k in [&payer, &admin] {
             svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
@@ -85,6 +87,7 @@ impl Fx {
             landlord,
             tenant,
             stranger,
+            arbiter,
             treasury,
             mint,
             tenant_token: Pubkey::new_unique(),
@@ -105,7 +108,7 @@ impl Fx {
                 system_program: system_program(),
             }
             .to_account_metas(None),
-            data: instruction::InitConfig { treasury: tr, arbiter: Pubkey::new_unique(), fee_bps: FEE_BPS }.data(),
+            data: instruction::InitConfig { treasury: tr, arbiter: fx.arbiter.pubkey(), fee_bps: FEE_BPS }.data(),
         };
         let admin = fx.admin.insecure_clone();
         fx.send(ix, &[&admin]).unwrap();
@@ -226,6 +229,7 @@ impl Fx {
                 accept_deadline: T0 + 60,
                 return_timeout: 60,
                 area: "Warsaw · Mokotów".to_string(),
+                checkin_hash: [7; 32],
             }
             .data(),
         };
@@ -301,7 +305,7 @@ impl Fx {
         let ix = Instruction {
             program_id: PROGRAM_ID,
             accounts: accounts::ProposeSettlement { landlord: signer.pubkey(), lease }.to_account_metas(None),
-            data: instruction::ProposeSettlement { to_tenant }.data(),
+            data: instruction::ProposeSettlement { to_tenant, evidence: [2; 32] }.data(),
         };
         self.send(ix, &[signer])
     }
@@ -332,6 +336,7 @@ fn offer_create_ok_with_fee() {
     assert_eq!(l.tenant, fx.tenant.pubkey());
     assert_eq!(l.fee_amount, FEE);
     assert_eq!(l.area, "Warsaw · Mokotów");
+    assert_eq!(l.checkin_hash, [7; 32]);
 }
 
 #[test]
@@ -473,6 +478,7 @@ fn settlement_guards() {
     let (mut fx, lease) = Fx::active();
     let (l, t) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone());
     assert!(fx.propose(&l, lease, DEPOSIT + 1).is_err(), "over deposit");
+    assert!(fx.propose(&l, lease, DEPOSIT).is_err(), "full return is release_full");
     assert!(fx.propose(&t, lease, 1).is_err(), "tenant cannot propose");
     fx.propose(&l, lease, 2_000_000_000).unwrap();
     assert!(fx
@@ -481,6 +487,7 @@ fn settlement_guards() {
     assert!(fx
         .close_out(&l, lease, instruction::AcceptSettlement { expected_to_tenant: 2_000_000_000 }.data())
         .is_err(), "landlord cannot accept");
+    assert!(fx.propose(&l, lease, 1_000_000_000).is_err(), "only one proposal");
 }
 
 #[test]
@@ -530,7 +537,7 @@ impl Fx {
                 .to_account_metas(None),
             data: instruction::UpdateConfig {
                 treasury: self.treasury,
-                arbiter: Pubkey::new_unique(),
+                arbiter: self.arbiter.pubkey(),
                 fee_bps,
             }
             .data(),
@@ -565,3 +572,202 @@ fn admin_handover() {
     // Cap still enforced.
     assert!(fx.update_config_as(&new, 1_001).is_err());
 }
+
+// ------------------------------------------------------------ move-out windows
+
+const END: i64 = 3 * MONTH; // lease end, relative to T0
+const TIMEOUT: i64 = 60; // return_timeout in create_offer_as
+const OFFER: u64 = 2_000_000_000;
+const BOND: u64 = DEPOSIT * 5 / 100;
+const START_BAL: u64 = 10_000_000_000;
+
+#[test]
+fn propose_after_return_window_fails() {
+    let (mut fx, lease) = Fx::active();
+    let l = fx.landlord.insecure_clone();
+    fx.warp(END + TIMEOUT + 1);
+    assert!(fx.propose(&l, lease, OFFER).is_err());
+}
+
+#[test]
+fn claim_blocked_while_proposal_pending() {
+    // Hole #1: tenant ignored the proposal and claimed everything.
+    let (mut fx, lease) = Fx::active();
+    let (l, t) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone());
+    fx.warp(END);
+    fx.propose(&l, lease, OFFER).unwrap();
+    fx.warp(TIMEOUT + 1);
+    assert!(fx.close_out(&t, lease, instruction::ClaimAfterTimeout {}.data()).is_err());
+}
+
+#[test]
+fn finalize_after_silence() {
+    let (mut fx, lease) = Fx::active();
+    let (l, s) = (fx.landlord.insecure_clone(), fx.stranger.insecure_clone());
+    fx.warp(END);
+    fx.propose(&l, lease, OFFER).unwrap();
+    assert!(fx.close_out(&l, lease, instruction::FinalizeSettlement {}.data()).is_err(), "too early");
+    fx.warp(TIMEOUT + 1);
+    assert!(fx.close_out(&s, lease, instruction::FinalizeSettlement {}.data()).is_err(), "stranger");
+    fx.close_out(&l, lease, instruction::FinalizeSettlement {}.data()).unwrap();
+    assert_eq!(fx.lease(&lease).outcome, DepositOutcome::Settled);
+    assert_eq!(fx.balance(&fx.landlord_token), DEPOSIT - OFFER);
+}
+
+impl Fx {
+    fn open_dispute_as(&mut self, signer: &Keypair, lease: Pubkey) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::OpenDispute {
+                tenant: signer.pubkey(),
+                lease,
+                vault: vault_pda(&lease),
+                mint: self.mint,
+                tenant_token: self.tenant_token,
+                token_program: token_program(),
+            }
+            .to_account_metas(None),
+            data: instruction::OpenDispute { evidence: [3; 32] }.data(),
+        };
+        self.send(ix, &[signer])
+    }
+
+    fn evidence_as(&mut self, signer: &Keypair, lease: Pubkey, evidence: [u8; 32]) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::SubmitEvidence { signer: signer.pubkey(), lease }.to_account_metas(None),
+            data: instruction::SubmitEvidence { evidence }.data(),
+        };
+        self.send(ix, &[signer])
+    }
+
+    fn resolve_as(&mut self, signer: &Keypair, lease: Pubkey, to_tenant: u64) -> Result<(), String> {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: accounts::ResolveDispute {
+                arbiter: signer.pubkey(),
+                config: config_pda(),
+                lease,
+                vault: vault_pda(&lease),
+                mint: self.mint,
+                tenant_token: self.tenant_token,
+                landlord_token: self.landlord_token,
+                treasury_token: self.treasury_token,
+                tenant_passport: passport_pda(&self.tenant.pubkey()),
+                landlord_passport: passport_pda(&self.landlord.pubkey()),
+                rent_receiver: self.payer.pubkey(),
+                token_program: token_program(),
+            }
+            .to_account_metas(None),
+            data: instruction::ResolveDispute { to_tenant }.data(),
+        };
+        self.send(ix, &[signer])
+    }
+
+    /// Active lease, landlord proposed OFFER, tenant disputed.
+    fn disputed() -> (Self, Pubkey) {
+        let (mut fx, lease) = Fx::active();
+        let (l, t) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone());
+        fx.warp(END);
+        fx.propose(&l, lease, OFFER).unwrap();
+        fx.open_dispute_as(&t, lease).unwrap();
+        (fx, lease)
+    }
+}
+
+#[test]
+fn dispute_open_posts_bond_and_freezes() {
+    let (mut fx, lease) = Fx::disputed();
+    let (l, t) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone());
+    let state = fx.lease(&lease);
+    assert_eq!(state.status, LeaseStatus::Disputed);
+    assert_eq!(state.dispute_bond, BOND);
+    assert_eq!(state.tenant_evidence, [3; 32]);
+    assert_eq!(state.landlord_evidence, [2; 32]);
+    assert_eq!(fx.balance(&vault_pda(&lease)), DEPOSIT + BOND);
+    // Nobody can pay out on their own while disputed.
+    fx.warp(10 * TIMEOUT);
+    assert!(fx.close_out(&t, lease, instruction::AcceptSettlement { expected_to_tenant: OFFER }.data()).is_err());
+    assert!(fx.close_out(&l, lease, instruction::FinalizeSettlement {}.data()).is_err());
+    assert!(fx.close_out(&t, lease, instruction::ClaimAfterTimeout {}.data()).is_err());
+    assert!(fx.close_out(&l, lease, instruction::ReleaseFull {}.data()).is_err());
+}
+
+#[test]
+fn dispute_guards() {
+    let (mut fx, lease) = Fx::active();
+    let (l, t) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone());
+    assert!(fx.open_dispute_as(&t, lease).is_err(), "nothing to dispute yet");
+    fx.warp(END);
+    fx.propose(&l, lease, OFFER).unwrap();
+    assert!(fx.open_dispute_as(&l, lease).is_err(), "landlord cannot open");
+    fx.warp(TIMEOUT + 1);
+    assert!(fx.open_dispute_as(&t, lease).is_err(), "response window over");
+}
+
+#[test]
+fn evidence_by_parties_only() {
+    let (mut fx, lease) = Fx::disputed();
+    let (l, t, s) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone(), fx.stranger.insecure_clone());
+    fx.evidence_as(&l, lease, [8; 32]).unwrap();
+    fx.evidence_as(&t, lease, [9; 32]).unwrap();
+    assert!(fx.evidence_as(&s, lease, [1; 32]).is_err());
+    let state = fx.lease(&lease);
+    assert_eq!((state.landlord_evidence, state.tenant_evidence), ([8; 32], [9; 32]));
+}
+
+#[test]
+fn resolve_only_by_arbiter_or_admin() {
+    let (mut fx, lease) = Fx::disputed();
+    let (l, t, s) = (fx.landlord.insecure_clone(), fx.tenant.insecure_clone(), fx.stranger.insecure_clone());
+    for k in [&l, &t, &s] {
+        assert!(fx.resolve_as(k, lease, DEPOSIT).is_err());
+    }
+    let arbiter = fx.arbiter.insecure_clone();
+    assert!(fx.resolve_as(&arbiter, lease, DEPOSIT + 1).is_err(), "over deposit");
+    let admin = fx.admin.insecure_clone();
+    fx.resolve_as(&admin, lease, OFFER).unwrap();
+    assert!(fx.resolve_as(&arbiter, lease, OFFER).is_err(), "twice");
+}
+
+#[test]
+fn resolve_tenant_wins_landlord_pays_bond() {
+    let (mut fx, lease) = Fx::disputed();
+    let arbiter = fx.arbiter.insecure_clone();
+    let award = 2_800_000_000;
+    fx.resolve_as(&arbiter, lease, award).unwrap();
+    let state = fx.lease(&lease);
+    assert_eq!(state.status, LeaseStatus::Closed);
+    assert_eq!(state.outcome, DepositOutcome::ArbiterResolved);
+    assert_eq!(state.amount_to_tenant, award);
+    // Tenant: award + own bond back.
+    assert_eq!(fx.balance(&fx.tenant_token), START_BAL - DEPOSIT - FEE + award);
+    // Landlord pays the bond out of their share.
+    assert_eq!(fx.balance(&fx.landlord_token), DEPOSIT - award - BOND);
+    assert_eq!(fx.balance(&fx.treasury_token), FEE + BOND);
+    let tp = fx.passport(&fx.tenant.pubkey());
+    assert_eq!((tp.leases_completed, tp.returned_in_full), (1, 0));
+}
+
+#[test]
+fn resolve_landlord_wins_tenant_loses_bond() {
+    let (mut fx, lease) = Fx::disputed();
+    let arbiter = fx.arbiter.insecure_clone();
+    fx.resolve_as(&arbiter, lease, OFFER).unwrap();
+    assert_eq!(fx.balance(&fx.tenant_token), START_BAL - DEPOSIT - FEE - BOND + OFFER);
+    assert_eq!(fx.balance(&fx.landlord_token), DEPOSIT - OFFER);
+    assert_eq!(fx.balance(&fx.treasury_token), FEE + BOND);
+}
+
+#[test]
+fn resolve_full_award_counts_as_full_return() {
+    let (mut fx, lease) = Fx::disputed();
+    let arbiter = fx.arbiter.insecure_clone();
+    fx.resolve_as(&arbiter, lease, DEPOSIT).unwrap();
+    // Landlord share is 0, so the penalty is capped at 0.
+    assert_eq!(fx.balance(&fx.landlord_token), 0);
+    assert_eq!(fx.balance(&fx.tenant_token), START_BAL - FEE);
+    assert_eq!(fx.balance(&fx.treasury_token), FEE);
+    assert_eq!(fx.passport(&fx.tenant.pubkey()).returned_in_full, 1);
+}
+

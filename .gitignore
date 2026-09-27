@@ -30,6 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# uploaded evidence (local dev storage)
+/.data/
+
 # env files
 .env*
 !.env.example

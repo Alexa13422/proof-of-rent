@@ -15,9 +15,13 @@ import {
   getClaimAfterTimeoutInstructionAsync,
   getCreateOfferInstructionAsync,
   getCreatePassportInstructionAsync,
+  getFinalizeSettlementInstructionAsync,
+  getOpenDisputeInstructionAsync,
   getProposeSettlementInstruction,
   getRejectOfferInstruction,
   getReleaseFullInstructionAsync,
+  getResolveDisputeInstructionAsync,
+  getSubmitEvidenceInstruction,
 } from "@/app/generated/proof_of_rent";
 import { AuthError, getUserSigner, resolveUserWallet } from "@/app/lib/server/privy";
 import { getFeePayerSigner } from "@/app/lib/server/fee-payer";
@@ -53,6 +57,14 @@ function addr(body: Body, key: string): Address {
   const v = str(body, key);
   if (!isValidAddress(v)) throw new BadRequest(`Invalid ${key}`);
   return address(v);
+}
+
+/** sha256 hex from /api/evidence → 32 bytes. Optional ones default to zeros. */
+function hash32(body: Body, key: string, optional = false): Uint8Array {
+  const v = body[key];
+  if (optional && (v === undefined || v === null || v === "")) return new Uint8Array(32);
+  if (typeof v !== "string" || !/^[0-9a-f]{64}$/.test(v)) throw new BadRequest(`Invalid ${key}`);
+  return Uint8Array.from(v.match(/../g)!, (h) => parseInt(h, 16));
 }
 
 function unixSeconds(value: string): bigint {
@@ -169,6 +181,7 @@ async function buildInstructions(
         acceptDeadline: now + OFFER_VALID_FOR,
         returnTimeout: RETURN_TIMEOUT,
         area,
+        checkinHash: hash32(body, "checkin", true),
       });
       const [leaseAddress] = await findLeasePda({ landlord: me, offerId });
       return {
@@ -217,6 +230,67 @@ async function buildInstructions(
             landlord: user,
             lease: lease.address,
             toTenant: parseAmount(str(body, "toTenant")),
+            evidence: hash32(body, "evidence"),
+          }),
+        ],
+      };
+    }
+
+    case "open_dispute": {
+      const lease = await loadLease(body, me);
+      return {
+        instructions: [
+          await getOpenDisputeInstructionAsync({
+            tenant: user,
+            lease: lease.address,
+            mint: lease.mint,
+            tenantToken: await ata(me),
+            evidence: hash32(body, "evidence"),
+          }),
+        ],
+      };
+    }
+
+    case "submit_evidence": {
+      const lease = await loadLease(body, me);
+      return {
+        instructions: [
+          getSubmitEvidenceInstruction({
+            signer: user,
+            lease: lease.address,
+            evidence: hash32(body, "evidence"),
+          }),
+        ],
+      };
+    }
+
+    case "resolve_dispute": {
+      // The arbiter is not a party; the program checks config.arbiter/admin.
+      const lease = await getLease(addr(body, "lease"));
+      if (!lease) throw new BadRequest("Lease not found");
+      const config = await getConfig();
+      if (!config) throw new Error("Program config missing");
+      if (me !== config.arbiter && me !== config.admin) {
+        throw new BadRequest("Only the arbiter can resolve disputes");
+      }
+      const [tenantPassport] = await findPassportPda({ owner: lease.tenant });
+      const [landlordPassport] = await findPassportPda({ owner: lease.landlord });
+      return {
+        instructions: [
+          await ensureAta(feePayer, lease.tenant),
+          await ensureAta(feePayer, lease.landlord),
+          await ensureAta(feePayer, config.treasury),
+          await getResolveDisputeInstructionAsync({
+            arbiter: user,
+            lease: lease.address,
+            mint: lease.mint,
+            tenantToken: await ata(lease.tenant),
+            landlordToken: await ata(lease.landlord),
+            treasuryToken: await ata(config.treasury),
+            tenantPassport,
+            landlordPassport,
+            rentReceiver: lease.payer,
+            toTenant: parseAmount(str(body, "toTenant")),
           }),
         ],
       };
@@ -224,6 +298,7 @@ async function buildInstructions(
 
     case "release_full":
     case "accept_settlement":
+    case "finalize_settlement":
     case "claim_after_timeout": {
       const lease = await loadLease(body, me);
       const accounts = await closeOutAccounts(user, lease);
@@ -236,7 +311,9 @@ async function buildInstructions(
           ? await getReleaseFullInstructionAsync(accounts)
           : action === "claim_after_timeout"
             ? await getClaimAfterTimeoutInstructionAsync(accounts)
-            : await getAcceptSettlementInstructionAsync({
+            : action === "finalize_settlement"
+              ? await getFinalizeSettlementInstructionAsync(accounts)
+              : await getAcceptSettlementInstructionAsync({
                 ...accounts,
                 expectedToTenant: BigInt(str(body, "expected")),
               });

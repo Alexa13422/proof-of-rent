@@ -7,6 +7,8 @@ import { sendAction } from "../../lib/hooks";
 import { useAccount } from "../../lib/auth/use-account";
 import { isValidAddress, TOKEN_SYMBOL } from "../../lib/chain";
 import { eyebrow, inputClass, primaryButton } from "../../components/site-header";
+import { EvidenceInput } from "../../components/evidence";
+import { uploadEvidence } from "../../lib/evidence";
 
 function isoDate(offsetDays: number) {
   const d = new Date();
@@ -17,7 +19,9 @@ function isoDate(offsetDays: number) {
 export function NewOfferForm() {
   const router = useRouter();
   const account = useAccount();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
   const [form, setForm] = useState({
     tenant: "",
     area: "",
@@ -41,10 +45,16 @@ export function NewOfferForm() {
       className="max-w-xl space-y-6"
       onSubmit={async (e) => {
         e.preventDefault();
-        setBusy(true);
         try {
+          let checkin: string | undefined;
+          if (notes.trim() || photos.length) {
+            setBusy("Uploading photos…");
+            checkin = await uploadEvidence({ kind: "checkin", text: notes, photos });
+          }
+          setBusy("Sending…");
           const { lease } = await sendAction("create_offer", {
             ...form,
+            checkin,
             startDate: `${form.startDate}T00:00:00Z`,
             endDate: `${form.endDate}T00:00:00Z`,
           });
@@ -53,7 +63,7 @@ export function NewOfferForm() {
         } catch (err) {
           toast.error((err as Error).message);
         } finally {
-          setBusy(false);
+          setBusy(null);
         }
       }}
     >
@@ -129,14 +139,32 @@ export function NewOfferForm() {
         </Field>
       </div>
 
+      <div>
+        <span className={eyebrow}>Move-in condition</span>
+        <p className="mt-1 text-sm text-muted">
+          Photos of the flat at move-in. They are stored off-chain; their
+          fingerprint goes on-chain, so nobody can swap them later. The arbiter
+          sees them if there is a dispute.
+        </p>
+        <div className="mt-3">
+          <EvidenceInput
+            text={notes}
+            photos={photos}
+            onText={setNotes}
+            onPhotos={setPhotos}
+            placeholder="Optional notes: existing scratches, meter readings, inventory…"
+          />
+        </div>
+      </div>
+
       <p className="rounded-lg border border-border bg-cream/50 px-4 py-3 text-sm leading-6 text-muted">
         The tenant has 7 days to accept. When they accept, they pay the deposit
         into escrow plus a 1% platform fee. If they want different terms, they
         reject the offer and you send a new one.
       </p>
 
-      <button type="submit" className={primaryButton} disabled={busy || tenantInvalid}>
-        {busy ? "Sending…" : "Send offer"}
+      <button type="submit" className={primaryButton} disabled={!!busy || tenantInvalid}>
+        {busy ?? "Send offer"}
       </button>
     </form>
   );

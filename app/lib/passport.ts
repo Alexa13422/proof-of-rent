@@ -17,6 +17,7 @@ const OUTCOME: Record<DepositOutcome, UiOutcome | null> = {
   [DepositOutcome.FullReturn]: "returned-in-full",
   [DepositOutcome.Settled]: "partly-returned",
   [DepositOutcome.TimeoutClaim]: "returned-in-full",
+  [DepositOutcome.ArbiterResolved]: "arbiter",
 };
 
 function monthYear(ts: bigint) {
@@ -65,7 +66,9 @@ export async function getChainPassport(owner: string): Promise<RentPassport | nu
       outcomeNote:
         l.outcome === DepositOutcome.TimeoutClaim
           ? "Landlord did not respond; the tenant claimed the deposit after the return window."
-          : undefined,
+          : l.outcome === DepositOutcome.ArbiterResolved
+            ? `Disputed; the arbiter awarded ${formatAmount(l.amountToTenant)} of ${formatAmount(l.depositAmount)}.`
+            : undefined,
       landlordLeases: landlordCounts.get(l.landlord) ?? 0,
       payments: [],
     })),

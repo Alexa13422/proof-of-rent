@@ -96,6 +96,16 @@ export type Lease = {
   bump: number;
   vaultBump: number;
   area: string;
+  /** sha256 of the move-in photo manifest (off-chain), set by the landlord. */
+  checkinHash: ReadonlyUint8Array;
+  /** When the landlord made the settlement proposal. */
+  proposedAt: bigint;
+  /** Tenant's bond held in the vault while disputed. */
+  disputeBond: bigint;
+  disputedAt: bigint;
+  /** sha256 of each side's statement + photos manifest (off-chain). */
+  tenantEvidence: ReadonlyUint8Array;
+  landlordEvidence: ReadonlyUint8Array;
 };
 
 export type LeaseArgs = {
@@ -124,6 +134,16 @@ export type LeaseArgs = {
   bump: number;
   vaultBump: number;
   area: string;
+  /** sha256 of the move-in photo manifest (off-chain), set by the landlord. */
+  checkinHash: ReadonlyUint8Array;
+  /** When the landlord made the settlement proposal. */
+  proposedAt: number | bigint;
+  /** Tenant's bond held in the vault while disputed. */
+  disputeBond: number | bigint;
+  disputedAt: number | bigint;
+  /** sha256 of each side's statement + photos manifest (off-chain). */
+  tenantEvidence: ReadonlyUint8Array;
+  landlordEvidence: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link LeaseArgs} account data. */
@@ -153,6 +173,12 @@ export function getLeaseEncoder(): Encoder<LeaseArgs> {
       ["bump", getU8Encoder()],
       ["vaultBump", getU8Encoder()],
       ["area", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
+      ["checkinHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["proposedAt", getI64Encoder()],
+      ["disputeBond", getU64Encoder()],
+      ["disputedAt", getI64Encoder()],
+      ["tenantEvidence", fixEncoderSize(getBytesEncoder(), 32)],
+      ["landlordEvidence", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: LEASE_DISCRIMINATOR }),
   );
@@ -184,6 +210,12 @@ export function getLeaseDecoder(): Decoder<Lease> {
     ["bump", getU8Decoder()],
     ["vaultBump", getU8Decoder()],
     ["area", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
+    ["checkinHash", fixDecoderSize(getBytesDecoder(), 32)],
+    ["proposedAt", getI64Decoder()],
+    ["disputeBond", getU64Decoder()],
+    ["disputedAt", getI64Decoder()],
+    ["tenantEvidence", fixDecoderSize(getBytesDecoder(), 32)],
+    ["landlordEvidence", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 

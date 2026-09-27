@@ -1,6 +1,6 @@
-// End-to-end devnet smoke test of the full lease flow, with throwaway
-// keypairs standing in for the two Privy users. Fee payer = platform key.
-// Run: npx tsx scripts/e2e-devnet.ts
+// Devnet e2e of the dispute flow with throwaway users; the arbiter is
+// whatever key config.arbiter is (the fee payer on devnet).
+// Run: npx tsx scripts/e2e-dispute.ts
 import { readFileSync } from "node:fs";
 import {
   appendTransactionMessageInstructions,
@@ -29,15 +29,15 @@ import {
 import { findPassportPda } from "../app/generated/proof_of_rent/pdas/passport.ts";
 import { findLeasePda } from "../app/generated/proof_of_rent/pdas/lease.ts";
 import { fetchLease } from "../app/generated/proof_of_rent/accounts/lease.ts";
-import { fetchPassport } from "../app/generated/proof_of_rent/accounts/passport.ts";
 import { fetchConfig } from "../app/generated/proof_of_rent/accounts/config.ts";
 import { findConfigPda } from "../app/generated/proof_of_rent/pdas/config.ts";
 import { getCreatePassportInstructionAsync } from "../app/generated/proof_of_rent/instructions/createPassport.ts";
 import { getCreateOfferInstructionAsync } from "../app/generated/proof_of_rent/instructions/createOffer.ts";
-import { getRejectOfferInstruction } from "../app/generated/proof_of_rent/instructions/rejectOffer.ts";
 import { getAcceptOfferInstructionAsync } from "../app/generated/proof_of_rent/instructions/acceptOffer.ts";
 import { getProposeSettlementInstruction } from "../app/generated/proof_of_rent/instructions/proposeSettlement.ts";
-import { getAcceptSettlementInstructionAsync } from "../app/generated/proof_of_rent/instructions/acceptSettlement.ts";
+import { getOpenDisputeInstructionAsync } from "../app/generated/proof_of_rent/instructions/openDispute.ts";
+import { getSubmitEvidenceInstruction } from "../app/generated/proof_of_rent/instructions/submitEvidence.ts";
+import { getResolveDisputeInstructionAsync } from "../app/generated/proof_of_rent/instructions/resolveDispute.ts";
 
 const env = Object.fromEntries(
   readFileSync(".env", "utf8")
@@ -51,13 +51,13 @@ const sendAndConfirm = sendAndConfirmTransactionFactory({
   rpc,
   rpcSubscriptions: createSolanaRpcSubscriptions("wss://api.devnet.solana.com"),
 });
-
 const feePayer = await createKeyPairSignerFromBytes(
   new Uint8Array(JSON.parse(env.FEE_PAYER_SECRET_KEY))
 );
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function send(label: string, instructions: Instruction[]) {
-  await new Promise((r) => setTimeout(r, 2500)); // public devnet RPC rate limit
+  await sleep(2500); // public devnet RPC rate limit
   const { value: blockhash } = await rpc.getLatestBlockhash().send();
   const tx = await signTransactionMessageWithSigners(
     pipe(
@@ -68,31 +68,32 @@ async function send(label: string, instructions: Instruction[]) {
     )
   );
   const sim = await rpc
-    .simulateTransaction(getBase64EncodedWireTransaction(tx), {
-      encoding: "base64",
-      sigVerify: true,
-    })
+    .simulateTransaction(getBase64EncodedWireTransaction(tx), { encoding: "base64", sigVerify: true })
     .send();
   if (sim.value.err) {
     console.error(sim.value.logs?.join("\n"));
     throw new Error(`${label}: simulation failed`);
   }
-  await sendAndConfirm(tx as Parameters<typeof sendAndConfirm>[0], {
-    commitment: "confirmed",
-  });
+  await sendAndConfirm(tx as Parameters<typeof sendAndConfirm>[0], { commitment: "confirmed" });
   console.log(`✓ ${label}`);
 }
 
 const ata = async (owner: Address) =>
   (await findAssociatedTokenPda({ mint: MINT, owner, tokenProgram: TOKEN_PROGRAM_ADDRESS }))[0];
 const balance = async (owner: Address) => (await fetchToken(rpc, await ata(owner))).data.amount;
+const hash = (n: number) => new Uint8Array(32).fill(n);
 
 async function onboard(user: KeyPairSigner) {
-  await send("create passport + starter tokens", [
+  await send("passport + starter tokens", [
     await getCreatePassportInstructionAsync({ owner: user, payer: feePayer }),
     await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: feePayer, mint: MINT, owner: user.address }),
     getMintToInstruction({ mint: MINT, token: await ata(user.address), mintAuthority: feePayer, amount: 20_000_000_000n }),
   ]);
+}
+
+const config = (await fetchConfig(rpc, (await findConfigPda())[0])).data;
+if (config.arbiter !== feePayer.address && config.admin !== feePayer.address) {
+  throw new Error(`fee payer is not the arbiter (${config.arbiter})`);
 }
 
 const landlord = await generateKeyPairSigner();
@@ -101,39 +102,32 @@ console.log("landlord", landlord.address, "\ntenant  ", tenant.address);
 await onboard(landlord);
 await onboard(tenant);
 
-const config = (await fetchConfig(rpc, (await findConfigPda())[0])).data;
 const now = BigInt(Math.floor(Date.now() / 1000));
-const MONTH = 30n * 24n * 3600n;
+const DEPOSIT = 6_000_000_000n;
+const OFFER = 3_000_000_000n;
+const AWARD = 5_000_000_000n;
+const WINDOW = 120n;
 
-async function offer(offerId: bigint, deposit: bigint) {
-  await send(`create offer #${offerId}`, [
-    await getCreateOfferInstructionAsync({
-      landlord,
-      payer: feePayer,
-      mint: MINT,
-      offerId,
-      tenant: tenant.address,
-      depositAmount: deposit,
-      monthlyRent: 3_200_000_000n,
-      startTs: now - 12n * MONTH,
-      endTs: now + 60n,
-      acceptDeadline: now + 3600n,
-      returnTimeout: 60n,
-      area: "Warsaw · Mokotów",
-      checkinHash: new Uint8Array(32),
-    }),
-  ]);
-  return (await findLeasePda({ landlord: landlord.address, offerId }))[0];
-}
+await send("create offer (with move-in hash)", [
+  await getCreateOfferInstructionAsync({
+    landlord,
+    payer: feePayer,
+    mint: MINT,
+    offerId: 1n,
+    tenant: tenant.address,
+    depositAmount: DEPOSIT,
+    monthlyRent: 3_000_000_000n,
+    startTs: now - 90n * 86400n,
+    endTs: now + 30n, // ends almost immediately
+    acceptDeadline: now + 3600n,
+    returnTimeout: WINDOW,
+    area: "Warsaw · Wola",
+    checkinHash: hash(7),
+  }),
+]);
+const [lease] = await findLeasePda({ landlord: landlord.address, offerId: 1n });
 
-// 1. Tenant rejects the first offer; landlord sends a revised one.
-const first = await offer(1n, 8_000_000_000n);
-await send("tenant rejects offer #1", [getRejectOfferInstruction({ signer: tenant, lease: first })]);
-const lease = await offer(2n, 6_400_000_000n);
-
-// 2. Tenant accepts: deposit to escrow + fee to treasury.
-const before = await balance(tenant.address);
-await send("tenant accepts offer #2 (deposit + fee)", [
+await send("tenant accepts", [
   await getAcceptOfferInstructionAsync({
     tenant,
     payer: feePayer,
@@ -143,34 +137,56 @@ await send("tenant accepts offer #2 (deposit + fee)", [
     treasuryToken: await ata(config.treasury),
   }),
 ]);
-const leaseData = (await fetchLease(rpc, lease)).data;
-console.log(`  paid ${before - (await balance(tenant.address))} (deposit ${leaseData.depositAmount} + fee ${leaseData.feeAmount})`);
+const tenantAfterAccept = await balance(tenant.address);
 
-// 3. Move-out: landlord proposes 5 800, tenant accepts.
-await send("landlord proposes 5 800 back", [
-  getProposeSettlementInstruction({ landlord, lease, toTenant: 5_800_000_000n, evidence: new Uint8Array(32).fill(1) }),
+await send("landlord proposes 3000 back (with evidence)", [
+  getProposeSettlementInstruction({ landlord, lease, toTenant: OFFER, evidence: hash(2) }),
 ]);
+await send("tenant opens dispute (5% bond)", [
+  await getOpenDisputeInstructionAsync({
+    tenant,
+    lease,
+    mint: MINT,
+    tenantToken: await ata(tenant.address),
+    evidence: hash(3),
+  }),
+]);
+let state = (await fetchLease(rpc, lease)).data;
+console.log("  status", state.status, "bond", state.disputeBond);
+await send("landlord adds a statement", [
+  getSubmitEvidenceInstruction({ signer: landlord, lease, evidence: hash(4) }),
+]);
+
+const treasuryBefore = await balance(config.treasury);
 const [tenantPassport] = await findPassportPda({ owner: tenant.address });
 const [landlordPassport] = await findPassportPda({ owner: landlord.address });
-await send("tenant accepts settlement", [
-  await getAcceptSettlementInstructionAsync({
-    signer: tenant,
+await send("arbiter awards 5000 to tenant", [
+  await getResolveDisputeInstructionAsync({
+    arbiter: feePayer,
     lease,
     mint: MINT,
     tenantToken: await ata(tenant.address),
     landlordToken: await ata(landlord.address),
+    treasuryToken: await ata(config.treasury),
     tenantPassport,
     landlordPassport,
     rentReceiver: feePayer.address,
-    expectedToTenant: 5_800_000_000n,
+    toTenant: AWARD,
   }),
 ]);
 
-const final = (await fetchLease(rpc, lease)).data;
-const tp = (await fetchPassport(rpc, tenantPassport)).data;
-const lp = (await fetchPassport(rpc, landlordPassport)).data;
-console.log("lease status", final.status, "outcome", final.outcome, "to tenant", final.amountToTenant);
-console.log("tenant passport", { leases: tp.leasesCompleted, full: tp.returnedInFull, months: tp.monthsOnRecord });
-console.log("landlord passport", { closed: lp.landlordLeasesClosed, full: lp.landlordFullReturns });
-console.log("landlord balance", await balance(landlord.address));
-console.log(`\npassport: http://localhost:3000/passport/${tenant.address}`);
+state = (await fetchLease(rpc, lease)).data;
+const bond = (DEPOSIT * 500n) / 10_000n;
+const tenantGot = (await balance(tenant.address)) - tenantAfterAccept + bond; // bond left before
+const landlordBal = (await balance(landlord.address)) - 20_000_000_000n;
+const treasuryGot = (await balance(config.treasury)) - treasuryBefore;
+console.log({ status: state.status, outcome: state.outcome, amountToTenant: state.amountToTenant });
+console.log({ tenantGot, landlordGot: landlordBal, treasuryGot });
+const ok =
+  state.amountToTenant === AWARD &&
+  tenantGot === AWARD + bond &&
+  landlordBal === DEPOSIT - AWARD - bond &&
+  treasuryGot === bond;
+console.log(ok ? "\nALL CHECKS PASSED" : "\nMISMATCH");
+console.log(`lease: http://localhost:3000/offers/${lease}`);
+if (!ok) process.exit(1);

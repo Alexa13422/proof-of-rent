@@ -38,9 +38,20 @@ export const PROOF_OF_RENT_ERROR__SETTLEMENT_MISMATCH = 0x1779; // 6009
 export const PROOF_OF_RENT_ERROR__WRONG_TOKEN_ACCOUNT = 0x177a; // 6010
 /** MathOverflow: Arithmetic overflow */
 export const PROOF_OF_RENT_ERROR__MATH_OVERFLOW = 0x177b; // 6011
+/** AlreadyProposed: A return proposal was already made */
+export const PROOF_OF_RENT_ERROR__ALREADY_PROPOSED = 0x177c; // 6012
+/** ReturnWindowClosed: The return window is over; the tenant can claim the full deposit */
+export const PROOF_OF_RENT_ERROR__RETURN_WINDOW_CLOSED = 0x177d; // 6013
+/** ResponseWindowOpen: The tenant can still respond to the proposal */
+export const PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN = 0x177e; // 6014
+/** ResponseWindowClosed: The time to respond to the proposal is over */
+export const PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED = 0x177f; // 6015
+/** ProposalPending: There is a pending return proposal */
+export const PROOF_OF_RENT_ERROR__PROPOSAL_PENDING = 0x1780; // 6016
 
 export type ProofOfRentError =
   | typeof PROOF_OF_RENT_ERROR__ACCEPT_DEADLINE_PASSED
+  | typeof PROOF_OF_RENT_ERROR__ALREADY_PROPOSED
   | typeof PROOF_OF_RENT_ERROR__AREA_TOO_LONG
   | typeof PROOF_OF_RENT_ERROR__INVALID_AMOUNT
   | typeof PROOF_OF_RENT_ERROR__INVALID_PARTIES
@@ -48,7 +59,11 @@ export type ProofOfRentError =
   | typeof PROOF_OF_RENT_ERROR__INVALID_TIME_PARAMS
   | typeof PROOF_OF_RENT_ERROR__MATH_OVERFLOW
   | typeof PROOF_OF_RENT_ERROR__NO_SETTLEMENT_OFFER
+  | typeof PROOF_OF_RENT_ERROR__PROPOSAL_PENDING
+  | typeof PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED
+  | typeof PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN
   | typeof PROOF_OF_RENT_ERROR__RETURN_TIMEOUT_NOT_REACHED
+  | typeof PROOF_OF_RENT_ERROR__RETURN_WINDOW_CLOSED
   | typeof PROOF_OF_RENT_ERROR__SETTLEMENT_MISMATCH
   | typeof PROOF_OF_RENT_ERROR__UNAUTHORIZED
   | typeof PROOF_OF_RENT_ERROR__WRONG_TOKEN_ACCOUNT;
@@ -57,6 +72,7 @@ let proofOfRentErrorMessages: Record<ProofOfRentError, string> | undefined;
 if (process.env.NODE_ENV !== "production") {
   proofOfRentErrorMessages = {
     [PROOF_OF_RENT_ERROR__ACCEPT_DEADLINE_PASSED]: `The offer has expired`,
+    [PROOF_OF_RENT_ERROR__ALREADY_PROPOSED]: `A return proposal was already made`,
     [PROOF_OF_RENT_ERROR__AREA_TOO_LONG]: `Area label is too long`,
     [PROOF_OF_RENT_ERROR__INVALID_AMOUNT]: `Invalid amount`,
     [PROOF_OF_RENT_ERROR__INVALID_PARTIES]: `Landlord and tenant must be different users`,
@@ -64,7 +80,11 @@ if (process.env.NODE_ENV !== "production") {
     [PROOF_OF_RENT_ERROR__INVALID_TIME_PARAMS]: `Invalid dates or time windows`,
     [PROOF_OF_RENT_ERROR__MATH_OVERFLOW]: `Arithmetic overflow`,
     [PROOF_OF_RENT_ERROR__NO_SETTLEMENT_OFFER]: `There is no settlement offer`,
+    [PROOF_OF_RENT_ERROR__PROPOSAL_PENDING]: `There is a pending return proposal`,
+    [PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_CLOSED]: `The time to respond to the proposal is over`,
+    [PROOF_OF_RENT_ERROR__RESPONSE_WINDOW_OPEN]: `The tenant can still respond to the proposal`,
     [PROOF_OF_RENT_ERROR__RETURN_TIMEOUT_NOT_REACHED]: `The deposit cannot be claimed yet`,
+    [PROOF_OF_RENT_ERROR__RETURN_WINDOW_CLOSED]: `The return window is over; the tenant can claim the full deposit`,
     [PROOF_OF_RENT_ERROR__SETTLEMENT_MISMATCH]: `Settlement offer changed`,
     [PROOF_OF_RENT_ERROR__UNAUTHORIZED]: `Signer is not allowed to do this`,
     [PROOF_OF_RENT_ERROR__WRONG_TOKEN_ACCOUNT]: `Wrong token account`,

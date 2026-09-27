@@ -4,8 +4,15 @@
 //! *offer* for a tenant who already has a passport. The tenant either
 //! rejects it (the landlord then creates a revised offer) or accepts it:
 //! accepting moves the deposit into a vault owned by the lease PDA and pays
-//! the platform fee. The deposit leaves the vault only through
-//! `payout_and_close`, which also writes the outcome into both passports.
+//! the platform fee. The deposit leaves the vault only through `pay_out`,
+//! which also writes the outcome into both passports.
+//!
+//! Move-out: the landlord returns everything or proposes a partial return
+//! within `return_timeout` after `end_ts` (silence → tenant claims it all).
+//! The tenant then accepts, stays silent (the proposal executes after another
+//! `return_timeout`) or opens a dispute by posting a bond. The arbiter (or
+//! admin) splits the deposit; the losing side pays the bond to the treasury.
+//! Photos and statements live off-chain; the lease stores their sha256.
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, TransferChecked};
@@ -25,6 +32,8 @@ pub const MAX_AREA_LEN: usize = 48;
 /// Hard cap on the platform fee: 10% of the deposit.
 pub const MAX_FEE_BPS: u16 = 1_000;
 pub const SECONDS_PER_MONTH: i64 = 30 * 24 * 60 * 60;
+/// Dispute bond the tenant posts when disputing: 5% of the deposit.
+pub const DISPUTE_BOND_BPS: u64 = 500;
 
 #[program]
 pub mod proof_of_rent {
@@ -95,6 +104,7 @@ pub mod proof_of_rent {
         accept_deadline: i64,
         return_timeout: i64,
         area: String,
+        checkin_hash: [u8; 32],
     ) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let landlord = ctx.accounts.landlord.key();
@@ -135,6 +145,12 @@ pub mod proof_of_rent {
         lease.bump = ctx.bumps.lease;
         lease.vault_bump = 0;
         lease.area = area;
+        lease.checkin_hash = checkin_hash;
+        lease.proposed_at = 0;
+        lease.dispute_bond = 0;
+        lease.disputed_at = 0;
+        lease.tenant_evidence = [0; 32];
+        lease.landlord_evidence = [0; 32];
         Ok(())
     }
 
@@ -209,16 +225,28 @@ pub mod proof_of_rent {
         require_keys_eq!(ctx.accounts.signer.key(), lease.landlord, PorError::Unauthorized);
         require!(lease.status == LeaseStatus::Active, PorError::InvalidStatus);
         let deposit = lease.deposit_amount;
-        payout_and_close(ctx.accounts, deposit, DepositOutcome::FullReturn)
+        let a = &mut *ctx.accounts;
+        pay_out(&a.close(), &mut a.lease, &mut a.tenant_passport, &mut a.landlord_passport, deposit, 0, deposit, DepositOutcome::FullReturn)
     }
 
-    /// Landlord offers to return `to_tenant`; overwrites any earlier offer.
-    pub fn propose_settlement(ctx: Context<ProposeSettlement>, to_tenant: u64) -> Result<()> {
+    /// Landlord offers to return `to_tenant`, once, with photos/notes of the
+    /// damage (`evidence` = sha256 of the off-chain manifest). Only before the
+    /// return window closes: after it the tenant may claim the full deposit.
+    pub fn propose_settlement(
+        ctx: Context<ProposeSettlement>,
+        to_tenant: u64,
+        evidence: [u8; 32],
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
         let lease = &mut ctx.accounts.lease;
         require_keys_eq!(ctx.accounts.landlord.key(), lease.landlord, PorError::Unauthorized);
         require!(lease.status == LeaseStatus::Active, PorError::InvalidStatus);
-        require!(to_tenant <= lease.deposit_amount, PorError::InvalidAmount);
+        require!(lease.settlement_offer.is_none(), PorError::AlreadyProposed);
+        require!(to_tenant < lease.deposit_amount, PorError::InvalidAmount);
+        require!(now <= return_deadline(lease)?, PorError::ReturnWindowClosed);
         lease.settlement_offer = Some(to_tenant);
+        lease.proposed_at = now;
+        lease.landlord_evidence = evidence;
         Ok(())
     }
 
@@ -229,95 +257,259 @@ pub mod proof_of_rent {
         require!(lease.status == LeaseStatus::Active, PorError::InvalidStatus);
         let offer = lease.settlement_offer.ok_or(PorError::NoSettlementOffer)?;
         require!(offer == expected_to_tenant, PorError::SettlementMismatch);
-        let outcome = if offer == lease.deposit_amount {
-            DepositOutcome::FullReturn
-        } else {
-            DepositOutcome::Settled
-        };
-        payout_and_close(ctx.accounts, offer, outcome)
+        let a = &mut *ctx.accounts;
+        pay_out(&a.close(), &mut a.lease, &mut a.tenant_passport, &mut a.landlord_passport, offer, 0, offer, DepositOutcome::Settled)
     }
 
-    /// Landlord stayed silent past `end_ts + return_timeout`: tenant takes it all.
+    /// Tenant stayed silent on a proposal for `return_timeout`: it executes.
+    /// Either party may trigger it.
+    pub fn finalize_settlement(ctx: Context<CloseOut>) -> Result<()> {
+        let lease = &ctx.accounts.lease;
+        let signer = ctx.accounts.signer.key();
+        require!(signer == lease.landlord || signer == lease.tenant, PorError::Unauthorized);
+        require!(lease.status == LeaseStatus::Active, PorError::InvalidStatus);
+        let offer = lease.settlement_offer.ok_or(PorError::NoSettlementOffer)?;
+        require!(
+            Clock::get()?.unix_timestamp > response_deadline(lease)?,
+            PorError::ResponseWindowOpen
+        );
+        let a = &mut *ctx.accounts;
+        pay_out(&a.close(), &mut a.lease, &mut a.tenant_passport, &mut a.landlord_passport, offer, 0, offer, DepositOutcome::Settled)
+    }
+
+    /// Landlord neither returned the deposit nor proposed a split in time:
+    /// the tenant takes it all. Not available once a proposal exists.
     pub fn claim_after_timeout(ctx: Context<CloseOut>) -> Result<()> {
         let lease = &ctx.accounts.lease;
         require_keys_eq!(ctx.accounts.signer.key(), lease.tenant, PorError::Unauthorized);
         require!(lease.status == LeaseStatus::Active, PorError::InvalidStatus);
-        let unlock_at = lease
-            .end_ts
-            .checked_add(lease.return_timeout)
-            .ok_or(PorError::MathOverflow)?;
+        require!(lease.settlement_offer.is_none(), PorError::ProposalPending);
         require!(
-            Clock::get()?.unix_timestamp > unlock_at,
+            Clock::get()?.unix_timestamp > return_deadline(lease)?,
             PorError::ReturnTimeoutNotReached
         );
         let deposit = lease.deposit_amount;
-        payout_and_close(ctx.accounts, deposit, DepositOutcome::TimeoutClaim)
+        let a = &mut *ctx.accounts;
+        pay_out(&a.close(), &mut a.lease, &mut a.tenant_passport, &mut a.landlord_passport, deposit, 0, deposit, DepositOutcome::TimeoutClaim)
+    }
+
+    /// Tenant rejects the proposal and escalates to the arbiter, posting a
+    /// bond (5% of the deposit) into the vault. `evidence` = their statement.
+    pub fn open_dispute(ctx: Context<OpenDispute>, evidence: [u8; 32]) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let a = &mut *ctx.accounts;
+        require!(a.lease.status == LeaseStatus::Active, PorError::InvalidStatus);
+        require!(a.lease.settlement_offer.is_some(), PorError::NoSettlementOffer);
+        require!(now <= response_deadline(&a.lease)?, PorError::ResponseWindowClosed);
+
+        let bond = dispute_bond(a.lease.deposit_amount);
+        if bond > 0 {
+            token::transfer_checked(
+                CpiContext::new(
+                    a.token_program.key(),
+                    TransferChecked {
+                        from: a.tenant_token.to_account_info(),
+                        mint: a.mint.to_account_info(),
+                        to: a.vault.to_account_info(),
+                        authority: a.tenant.to_account_info(),
+                    },
+                ),
+                bond,
+                a.mint.decimals,
+            )?;
+        }
+        let lease = &mut a.lease;
+        lease.status = LeaseStatus::Disputed;
+        lease.dispute_bond = bond;
+        lease.disputed_at = now;
+        lease.tenant_evidence = evidence;
+        Ok(())
+    }
+
+    /// Either party replaces their statement while the dispute is open.
+    pub fn submit_evidence(ctx: Context<SubmitEvidence>, evidence: [u8; 32]) -> Result<()> {
+        let signer = ctx.accounts.signer.key();
+        let lease = &mut ctx.accounts.lease;
+        require!(lease.status == LeaseStatus::Disputed, PorError::InvalidStatus);
+        if signer == lease.tenant {
+            lease.tenant_evidence = evidence;
+        } else if signer == lease.landlord {
+            lease.landlord_evidence = evidence;
+        } else {
+            return err!(PorError::Unauthorized);
+        }
+        Ok(())
+    }
+
+    /// Arbiter (or admin) decides how much of the deposit the tenant gets.
+    /// Tenant wins if they get more than the landlord offered: their bond is
+    /// refunded and the landlord pays the same amount (from their share) to
+    /// the treasury. Otherwise the tenant's bond goes to the treasury.
+    pub fn resolve_dispute(ctx: Context<ResolveDispute>, to_tenant: u64) -> Result<()> {
+        let a = &mut *ctx.accounts;
+        let signer = a.arbiter.key();
+        require!(
+            signer == a.config.arbiter || signer == a.config.admin,
+            PorError::Unauthorized
+        );
+        require!(a.lease.status == LeaseStatus::Disputed, PorError::InvalidStatus);
+        require!(to_tenant <= a.lease.deposit_amount, PorError::InvalidAmount);
+
+        let offer = a.lease.settlement_offer.ok_or(PorError::NoSettlementOffer)?;
+        let bond = a.lease.dispute_bond;
+        let total = a.vault.amount;
+        let (tenant_gets, treasury_gets) = if to_tenant > offer {
+            let landlord_share = total
+                .checked_sub(to_tenant.checked_add(bond).ok_or(PorError::MathOverflow)?)
+                .ok_or(PorError::MathOverflow)?;
+            (to_tenant + bond, bond.min(landlord_share))
+        } else {
+            (to_tenant, bond)
+        };
+
+        let close = Close {
+            vault: a.vault.to_account_info(),
+            vault_amount: total,
+            mint: a.mint.to_account_info(),
+            decimals: a.mint.decimals,
+            tenant_token: a.tenant_token.to_account_info(),
+            landlord_token: a.landlord_token.to_account_info(),
+            treasury_token: Some(a.treasury_token.to_account_info()),
+            rent_receiver: a.rent_receiver.to_account_info(),
+            token_program: a.token_program.to_account_info(),
+        };
+        pay_out(
+            &close,
+            &mut a.lease,
+            &mut a.tenant_passport,
+            &mut a.landlord_passport,
+            tenant_gets,
+            treasury_gets,
+            to_tenant,
+            DepositOutcome::ArbiterResolved,
+        )
     }
 }
 
-/// The only place tokens leave a vault.
-fn payout_and_close(accounts: &mut CloseOut, to_tenant: u64, outcome: DepositOutcome) -> Result<()> {
-    // Actual balance, so stray dust sent to the vault cannot brick closing.
-    let total = accounts.vault.amount;
-    let to_landlord = total.checked_sub(to_tenant).ok_or(PorError::MathOverflow)?;
+fn return_deadline(lease: &Lease) -> Result<i64> {
+    Ok(lease.end_ts.checked_add(lease.return_timeout).ok_or(PorError::MathOverflow)?)
+}
 
-    let landlord_key = accounts.lease.landlord;
-    let offer_bytes = accounts.lease.offer_id.to_le_bytes();
-    let bump = [accounts.lease.bump];
+fn response_deadline(lease: &Lease) -> Result<i64> {
+    Ok(lease.proposed_at.checked_add(lease.return_timeout).ok_or(PorError::MathOverflow)?)
+}
+
+pub fn dispute_bond(deposit: u64) -> u64 {
+    ((deposit as u128) * (DISPUTE_BOND_BPS as u128) / 10_000) as u64
+}
+
+/// Accounts `pay_out` moves tokens between.
+struct Close<'info> {
+    vault: AccountInfo<'info>,
+    vault_amount: u64,
+    mint: AccountInfo<'info>,
+    decimals: u8,
+    tenant_token: AccountInfo<'info>,
+    landlord_token: AccountInfo<'info>,
+    treasury_token: Option<AccountInfo<'info>>,
+    rent_receiver: AccountInfo<'info>,
+    token_program: AccountInfo<'info>,
+}
+
+impl<'info> CloseOut<'info> {
+    fn close(&self) -> Close<'info> {
+        Close {
+            vault: self.vault.to_account_info(),
+            vault_amount: self.vault.amount,
+            mint: self.mint.to_account_info(),
+            decimals: self.mint.decimals,
+            tenant_token: self.tenant_token.to_account_info(),
+            landlord_token: self.landlord_token.to_account_info(),
+            treasury_token: None,
+            rent_receiver: self.rent_receiver.to_account_info(),
+            token_program: self.token_program.to_account_info(),
+        }
+    }
+}
+
+/// The only place tokens leave a vault. The landlord gets whatever is left
+/// after `to_tenant` and `to_treasury` (actual balance, so stray dust sent to
+/// the vault cannot brick closing).
+fn pay_out<'info>(
+    c: &Close<'info>,
+    lease: &mut Box<Account<'info, Lease>>,
+    tenant_passport: &mut Box<Account<'info, Passport>>,
+    landlord_passport: &mut Box<Account<'info, Passport>>,
+    to_tenant: u64,
+    to_treasury: u64,
+    award: u64,
+    outcome: DepositOutcome,
+) -> Result<()> {
+    let to_landlord = c
+        .vault_amount
+        .checked_sub(to_tenant)
+        .and_then(|v| v.checked_sub(to_treasury))
+        .ok_or(PorError::MathOverflow)?;
+
+    let landlord_key = lease.landlord;
+    let offer_bytes = lease.offer_id.to_le_bytes();
+    let bump = [lease.bump];
     let seeds: &[&[u8]] = &[LEASE_SEED, landlord_key.as_ref(), &offer_bytes, &bump];
     let signer_seeds = &[seeds];
-    let decimals = accounts.mint.decimals;
+    let authority = lease.to_account_info();
 
-    for (to, amount) in [
-        (accounts.tenant_token.to_account_info(), to_tenant),
-        (accounts.landlord_token.to_account_info(), to_landlord),
-    ] {
+    let mut legs = vec![
+        (c.tenant_token.clone(), to_tenant),
+        (c.landlord_token.clone(), to_landlord),
+    ];
+    if let Some(treasury) = &c.treasury_token {
+        legs.push((treasury.clone(), to_treasury));
+    } else {
+        require!(to_treasury == 0, PorError::WrongTokenAccount);
+    }
+    for (to, amount) in legs {
         if amount == 0 {
             continue;
         }
         token::transfer_checked(
             CpiContext::new_with_signer(
-                accounts.token_program.key(),
+                *c.token_program.key,
                 TransferChecked {
-                    from: accounts.vault.to_account_info(),
-                    mint: accounts.mint.to_account_info(),
+                    from: c.vault.clone(),
+                    mint: c.mint.clone(),
                     to,
-                    authority: accounts.lease.to_account_info(),
+                    authority: authority.clone(),
                 },
                 signer_seeds,
             ),
             amount,
-            decimals,
+            c.decimals,
         )?;
     }
 
     token::close_account(CpiContext::new_with_signer(
-        accounts.token_program.key(),
+        *c.token_program.key,
         CloseAccount {
-            account: accounts.vault.to_account_info(),
-            destination: accounts.rent_receiver.to_account_info(),
-            authority: accounts.lease.to_account_info(),
+            account: c.vault.clone(),
+            destination: c.rent_receiver.clone(),
+            authority,
         },
         signer_seeds,
     ))?;
 
     let now = Clock::get()?.unix_timestamp;
-    let lease = &mut accounts.lease;
-    let full = to_tenant >= lease.deposit_amount;
+    let full = award >= lease.deposit_amount;
     let months = (lease.end_ts.saturating_sub(lease.start_ts) / SECONDS_PER_MONTH).max(0);
     let months = u32::try_from(months).map_err(|_| PorError::MathOverflow)?;
 
     lease.status = LeaseStatus::Closed;
     lease.outcome = outcome;
-    lease.amount_to_tenant = to_tenant;
+    lease.amount_to_tenant = award;
     lease.closed_at = now;
-    lease.settlement_offer = None;
 
-    let tenant_passport = &mut accounts.tenant_passport;
     tenant_passport.leases_completed = inc(tenant_passport.leases_completed, 1)?;
     tenant_passport.months_on_record = inc(tenant_passport.months_on_record, months)?;
 
-    let landlord_passport = &mut accounts.landlord_passport;
     landlord_passport.landlord_leases_closed = inc(landlord_passport.landlord_leases_closed, 1)?;
 
     if full {
@@ -339,7 +531,7 @@ pub struct Config {
     pub admin: Pubkey,
     /// Owner of the token accounts that receive platform fees.
     pub treasury: Pubkey,
-    /// Reserved for the dispute flow (next milestone).
+    /// Resolves deposit disputes (the admin can too).
     pub arbiter: Pubkey,
     pub fee_bps: u16,
     pub bump: u8,
@@ -389,6 +581,16 @@ pub struct Lease {
     pub vault_bump: u8,
     #[max_len(MAX_AREA_LEN)]
     pub area: String,
+    /// sha256 of the move-in photo manifest (off-chain), set by the landlord.
+    pub checkin_hash: [u8; 32],
+    /// When the landlord made the settlement proposal.
+    pub proposed_at: i64,
+    /// Tenant's bond held in the vault while disputed.
+    pub dispute_bond: u64,
+    pub disputed_at: i64,
+    /// sha256 of each side's statement + photos manifest (off-chain).
+    pub tenant_evidence: [u8; 32],
+    pub landlord_evidence: [u8; 32],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
@@ -398,6 +600,7 @@ pub enum LeaseStatus {
     Cancelled,
     Active,
     Closed,
+    Disputed,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
@@ -406,6 +609,7 @@ pub enum DepositOutcome {
     FullReturn,
     Settled,
     TimeoutClaim,
+    ArbiterResolved,
 }
 
 // ---------------------------------------------------------------- contexts
@@ -528,6 +732,70 @@ pub struct ProposeSettlement<'info> {
     pub lease: Account<'info, Lease>,
 }
 
+#[derive(Accounts)]
+pub struct OpenDispute<'info> {
+    pub tenant: Signer<'info>,
+    #[account(mut, has_one = tenant @ PorError::Unauthorized)]
+    pub lease: Box<Account<'info, Lease>>,
+    #[account(mut, seeds = [VAULT_SEED, lease.key().as_ref()], bump = lease.vault_bump)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    #[account(address = lease.mint @ PorError::WrongTokenAccount)]
+    pub mint: Box<Account<'info, Mint>>,
+    #[account(
+        mut,
+        constraint = tenant_token.mint == lease.mint @ PorError::WrongTokenAccount,
+        constraint = tenant_token.owner == tenant.key() @ PorError::WrongTokenAccount,
+    )]
+    pub tenant_token: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct SubmitEvidence<'info> {
+    pub signer: Signer<'info>,
+    #[account(mut)]
+    pub lease: Account<'info, Lease>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveDispute<'info> {
+    pub arbiter: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(mut)]
+    pub lease: Box<Account<'info, Lease>>,
+    #[account(mut, seeds = [VAULT_SEED, lease.key().as_ref()], bump = lease.vault_bump)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    #[account(address = lease.mint @ PorError::WrongTokenAccount)]
+    pub mint: Box<Account<'info, Mint>>,
+    #[account(
+        mut,
+        constraint = tenant_token.mint == lease.mint @ PorError::WrongTokenAccount,
+        constraint = tenant_token.owner == lease.tenant @ PorError::WrongTokenAccount,
+    )]
+    pub tenant_token: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        constraint = landlord_token.mint == lease.mint @ PorError::WrongTokenAccount,
+        constraint = landlord_token.owner == lease.landlord @ PorError::WrongTokenAccount,
+    )]
+    pub landlord_token: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        constraint = treasury_token.mint == lease.mint @ PorError::WrongTokenAccount,
+        constraint = treasury_token.owner == config.treasury @ PorError::WrongTokenAccount,
+    )]
+    pub treasury_token: Box<Account<'info, TokenAccount>>,
+    #[account(mut, seeds = [PASSPORT_SEED, lease.tenant.as_ref()], bump = tenant_passport.bump)]
+    pub tenant_passport: Box<Account<'info, Passport>>,
+    #[account(mut, seeds = [PASSPORT_SEED, lease.landlord.as_ref()], bump = landlord_passport.bump)]
+    pub landlord_passport: Box<Account<'info, Passport>>,
+    /// CHECK: only receives the vault's rent lamports; pinned to `lease.payer`.
+    #[account(mut, address = lease.payer @ PorError::Unauthorized)]
+    pub rent_receiver: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
 /// Shared by every instruction that pays out the vault.
 /// Each handler checks the signer's role against the lease first.
 #[derive(Accounts)]
@@ -587,4 +855,14 @@ pub enum PorError {
     WrongTokenAccount,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    #[msg("A return proposal was already made")]
+    AlreadyProposed,
+    #[msg("The return window is over; the tenant can claim the full deposit")]
+    ReturnWindowClosed,
+    #[msg("The tenant can still respond to the proposal")]
+    ResponseWindowOpen,
+    #[msg("The time to respond to the proposal is over")]
+    ResponseWindowClosed,
+    #[msg("There is a pending return proposal")]
+    ProposalPending,
 }

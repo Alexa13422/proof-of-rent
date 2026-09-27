@@ -20,6 +20,7 @@ export enum DepositOutcome {
   FullReturn,
   Settled,
   TimeoutClaim,
+  ArbiterResolved,
 }
 
 export type DepositOutcomeArgs = DepositOutcome;

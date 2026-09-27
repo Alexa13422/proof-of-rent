@@ -124,6 +124,7 @@ export type CreateOfferInstructionData = {
   acceptDeadline: bigint;
   returnTimeout: bigint;
   area: string;
+  checkinHash: ReadonlyUint8Array;
 };
 
 export type CreateOfferInstructionDataArgs = {
@@ -136,6 +137,7 @@ export type CreateOfferInstructionDataArgs = {
   acceptDeadline: number | bigint;
   returnTimeout: number | bigint;
   area: string;
+  checkinHash: ReadonlyUint8Array;
 };
 
 export function getCreateOfferInstructionDataEncoder(): Encoder<CreateOfferInstructionDataArgs> {
@@ -151,6 +153,7 @@ export function getCreateOfferInstructionDataEncoder(): Encoder<CreateOfferInstr
       ["acceptDeadline", getI64Encoder()],
       ["returnTimeout", getI64Encoder()],
       ["area", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
+      ["checkinHash", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: CREATE_OFFER_DISCRIMINATOR }),
   );
@@ -168,6 +171,7 @@ export function getCreateOfferInstructionDataDecoder(): Decoder<CreateOfferInstr
     ["acceptDeadline", getI64Decoder()],
     ["returnTimeout", getI64Decoder()],
     ["area", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
+    ["checkinHash", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
@@ -209,6 +213,7 @@ export type CreateOfferAsyncInput<
   acceptDeadline: CreateOfferInstructionDataArgs["acceptDeadline"];
   returnTimeout: CreateOfferInstructionDataArgs["returnTimeout"];
   area: CreateOfferInstructionDataArgs["area"];
+  checkinHash: CreateOfferInstructionDataArgs["checkinHash"];
 };
 
 export async function getCreateOfferInstructionAsync<
@@ -354,6 +359,7 @@ export type CreateOfferInput<
   acceptDeadline: CreateOfferInstructionDataArgs["acceptDeadline"];
   returnTimeout: CreateOfferInstructionDataArgs["returnTimeout"];
   area: CreateOfferInstructionDataArgs["area"];
+  checkinHash: CreateOfferInstructionDataArgs["checkinHash"];
 };
 
 export function getCreateOfferInstruction<

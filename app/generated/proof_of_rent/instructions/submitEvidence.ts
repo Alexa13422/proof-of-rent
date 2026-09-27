@@ -14,8 +14,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -34,29 +32,29 @@ import {
 import { PROOF_OF_RENT_PROGRAM_ADDRESS } from "../programs";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
 
-export const PROPOSE_SETTLEMENT_DISCRIMINATOR = new Uint8Array([
-  228, 149, 56, 61, 137, 43, 106, 25,
+export const SUBMIT_EVIDENCE_DISCRIMINATOR = new Uint8Array([
+  12, 169, 228, 194, 229, 31, 44, 39,
 ]);
 
-export function getProposeSettlementDiscriminatorBytes() {
+export function getSubmitEvidenceDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    PROPOSE_SETTLEMENT_DISCRIMINATOR,
+    SUBMIT_EVIDENCE_DISCRIMINATOR,
   );
 }
 
-export type ProposeSettlementInstruction<
+export type SubmitEvidenceInstruction<
   TProgram extends string = typeof PROOF_OF_RENT_PROGRAM_ADDRESS,
-  TAccountLandlord extends string | AccountMeta<string> = string,
+  TAccountSigner extends string | AccountMeta<string> = string,
   TAccountLease extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountLandlord extends string
-        ? ReadonlySignerAccount<TAccountLandlord> &
-            AccountSignerMeta<TAccountLandlord>
-        : TAccountLandlord,
+      TAccountSigner extends string
+        ? ReadonlySignerAccount<TAccountSigner> &
+            AccountSignerMeta<TAccountSigner>
+        : TAccountSigner,
       TAccountLease extends string
         ? WritableAccount<TAccountLease>
         : TAccountLease,
@@ -64,75 +62,66 @@ export type ProposeSettlementInstruction<
     ]
   >;
 
-export type ProposeSettlementInstructionData = {
+export type SubmitEvidenceInstructionData = {
   discriminator: ReadonlyUint8Array;
-  toTenant: bigint;
   evidence: ReadonlyUint8Array;
 };
 
-export type ProposeSettlementInstructionDataArgs = {
-  toTenant: number | bigint;
+export type SubmitEvidenceInstructionDataArgs = {
   evidence: ReadonlyUint8Array;
 };
 
-export function getProposeSettlementInstructionDataEncoder(): FixedSizeEncoder<ProposeSettlementInstructionDataArgs> {
+export function getSubmitEvidenceInstructionDataEncoder(): FixedSizeEncoder<SubmitEvidenceInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["toTenant", getU64Encoder()],
       ["evidence", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
-    (value) => ({ ...value, discriminator: PROPOSE_SETTLEMENT_DISCRIMINATOR }),
+    (value) => ({ ...value, discriminator: SUBMIT_EVIDENCE_DISCRIMINATOR }),
   );
 }
 
-export function getProposeSettlementInstructionDataDecoder(): FixedSizeDecoder<ProposeSettlementInstructionData> {
+export function getSubmitEvidenceInstructionDataDecoder(): FixedSizeDecoder<SubmitEvidenceInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["toTenant", getU64Decoder()],
     ["evidence", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
-export function getProposeSettlementInstructionDataCodec(): FixedSizeCodec<
-  ProposeSettlementInstructionDataArgs,
-  ProposeSettlementInstructionData
+export function getSubmitEvidenceInstructionDataCodec(): FixedSizeCodec<
+  SubmitEvidenceInstructionDataArgs,
+  SubmitEvidenceInstructionData
 > {
   return combineCodec(
-    getProposeSettlementInstructionDataEncoder(),
-    getProposeSettlementInstructionDataDecoder(),
+    getSubmitEvidenceInstructionDataEncoder(),
+    getSubmitEvidenceInstructionDataDecoder(),
   );
 }
 
-export type ProposeSettlementInput<
-  TAccountLandlord extends string = string,
+export type SubmitEvidenceInput<
+  TAccountSigner extends string = string,
   TAccountLease extends string = string,
 > = {
-  landlord: TransactionSigner<TAccountLandlord>;
+  signer: TransactionSigner<TAccountSigner>;
   lease: Address<TAccountLease>;
-  toTenant: ProposeSettlementInstructionDataArgs["toTenant"];
-  evidence: ProposeSettlementInstructionDataArgs["evidence"];
+  evidence: SubmitEvidenceInstructionDataArgs["evidence"];
 };
 
-export function getProposeSettlementInstruction<
-  TAccountLandlord extends string,
+export function getSubmitEvidenceInstruction<
+  TAccountSigner extends string,
   TAccountLease extends string,
   TProgramAddress extends Address = typeof PROOF_OF_RENT_PROGRAM_ADDRESS,
 >(
-  input: ProposeSettlementInput<TAccountLandlord, TAccountLease>,
+  input: SubmitEvidenceInput<TAccountSigner, TAccountLease>,
   config?: { programAddress?: TProgramAddress },
-): ProposeSettlementInstruction<
-  TProgramAddress,
-  TAccountLandlord,
-  TAccountLease
-> {
+): SubmitEvidenceInstruction<TProgramAddress, TAccountSigner, TAccountLease> {
   // Program address.
   const programAddress =
     config?.programAddress ?? PROOF_OF_RENT_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
-    landlord: { value: input.landlord ?? null, isWritable: false },
+    signer: { value: input.signer ?? null, isWritable: false },
     lease: { value: input.lease ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
@@ -145,41 +134,38 @@ export function getProposeSettlementInstruction<
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
-    accounts: [
-      getAccountMeta(accounts.landlord),
-      getAccountMeta(accounts.lease),
-    ],
-    data: getProposeSettlementInstructionDataEncoder().encode(
-      args as ProposeSettlementInstructionDataArgs,
+    accounts: [getAccountMeta(accounts.signer), getAccountMeta(accounts.lease)],
+    data: getSubmitEvidenceInstructionDataEncoder().encode(
+      args as SubmitEvidenceInstructionDataArgs,
     ),
     programAddress,
-  } as ProposeSettlementInstruction<
+  } as SubmitEvidenceInstruction<
     TProgramAddress,
-    TAccountLandlord,
+    TAccountSigner,
     TAccountLease
   >);
 }
 
-export type ParsedProposeSettlementInstruction<
+export type ParsedSubmitEvidenceInstruction<
   TProgram extends string = typeof PROOF_OF_RENT_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    landlord: TAccountMetas[0];
+    signer: TAccountMetas[0];
     lease: TAccountMetas[1];
   };
-  data: ProposeSettlementInstructionData;
+  data: SubmitEvidenceInstructionData;
 };
 
-export function parseProposeSettlementInstruction<
+export function parseSubmitEvidenceInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedProposeSettlementInstruction<TProgram, TAccountMetas> {
+): ParsedSubmitEvidenceInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 2) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -192,7 +178,7 @@ export function parseProposeSettlementInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { landlord: getNextAccount(), lease: getNextAccount() },
-    data: getProposeSettlementInstructionDataDecoder().decode(instruction.data),
+    accounts: { signer: getNextAccount(), lease: getNextAccount() },
+    data: getSubmitEvidenceInstructionDataDecoder().decode(instruction.data),
   };
 }
